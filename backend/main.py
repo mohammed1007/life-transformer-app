@@ -174,3 +174,7 @@ def create_debt(debt: DebtCreate, db: Session = Depends(get_db)):
     db.commit()
     db.refresh(db_item)
     return db_item
+@app.get("/debts/active")
+def get_active_debt(db: Session = Depends(get_db)):
+    active_debt = db.query(DebtGoal).filter(DebtGoal.amount_paid < DebtGoal.target_amount).first()
+    return active_debt
