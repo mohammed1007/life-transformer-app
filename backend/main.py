@@ -3,7 +3,7 @@ from pydantic import BaseModel
 import requests
 from bs4 import BeautifulSoup
 from fastapi.middleware.cors import CORSMiddleware
-from sqlalchemy import create_engine, Column, Integer, String, Date
+from sqlalchemy import create_engine, Column, Integer, String, Date, Text
 from sqlalchemy.orm import declarative_base, sessionmaker, Session
 from datetime import date
 import math
@@ -39,9 +39,9 @@ class GoalItem(Base):
     currency = Column(String, default="EGP")
     category = Column(String, default="Maintenance")
     tier = Column(String, default="NOW")
-    stock_status = Column(String, default="IN_STOCK") # IN_STOCK, LOW, OUT
-    image_url = Column(String)
-    original_url = Column(String)
+    stock_status = Column(String, default="IN_STOCK")
+    image_url = Column(Text, default="") # Changed from String to Text
+    original_url = Column(String, default="")
     status = Column(String, default="Active")
     funded_amount = Column(Integer, default=0)
 
