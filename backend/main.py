@@ -29,15 +29,16 @@ class IncomeLog(Base):
     debt_deducted = Column(Integer)
     rebuild_pool = Column(Integer)
 
-# Renamed to force a fresh PostgreSQL table with new columns
+# Renamed to generate new schema with stock tracking
 class GoalItem(Base):
-    __tablename__ = "goals_v2" 
+    __tablename__ = "goals_v3" 
     id = Column(Integer, primary_key=True, index=True)
     title = Column(String, index=True)
     price = Column(String)
     currency = Column(String, default="EGP")
     category = Column(String, default="Maintenance")
     tier = Column(String, default="NOW")
+    stock_status = Column(String, default="IN_STOCK") # IN_STOCK, LOW, OUT
     image_url = Column(String)
     original_url = Column(String)
     status = Column(String, default="Active")
@@ -53,16 +54,13 @@ def get_db():
         db.close()
 
 app = FastAPI()
+app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_methods=["*"], allow_headers=["*"])
 
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=["*"], 
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
-
-class URLRequest(BaseModel):
-    url: str
+class URLRequest(BaseModel): url: str
+class FundRequest(BaseModel): amount: int
+class IncomeInput(BaseModel): amount: int
+class DebtCreate(BaseModel): name: str; target_amount: int; deadline: date
+class StockUpdateRequest(BaseModel): status: str
 
 class GoalCreate(BaseModel):
     title: str
@@ -72,17 +70,6 @@ class GoalCreate(BaseModel):
     tier: str
     image_url: str
     original_url: str
-
-class FundRequest(BaseModel):
-    amount: int
-
-class IncomeInput(BaseModel):
-    amount: int
-
-class DebtCreate(BaseModel):
-    name: str
-    target_amount: int
-    deadline: date
 
 @app.post("/extract")
 def extract_item_data(request: URLRequest):
@@ -115,16 +102,23 @@ def save_goal(goal: GoalCreate, db: Session = Depends(get_db)):
 
 @app.get("/goals")
 def get_all_goals(db: Session = Depends(get_db)):
-    return db.query(GoalItem).all()
+    return db.query(GoalItem).order_by(GoalItem.id.desc()).all()
 
 @app.post("/goals/{goal_id}/fund")
 def fund_goal(goal_id: int, request: FundRequest, db: Session = Depends(get_db)):
     goal = db.query(GoalItem).filter(GoalItem.id == goal_id).first()
-    if not goal:
-        raise HTTPException(status_code=404, detail="Goal not found")
-    goal.funded_amount += request.amount
-    db.commit()
-    db.refresh(goal)
+    if goal:
+        goal.funded_amount += request.amount
+        db.commit()
+    return goal
+
+# NEW: Inventory Status Toggle
+@app.put("/goals/{goal_id}/stock")
+def update_stock_status(goal_id: int, request: StockUpdateRequest, db: Session = Depends(get_db)):
+    goal = db.query(GoalItem).filter(GoalItem.id == goal_id).first()
+    if goal:
+        goal.stock_status = request.status
+        db.commit()
     return goal
 
 @app.get("/debts/active")
@@ -136,7 +130,6 @@ def create_debt(debt: DebtCreate, db: Session = Depends(get_db)):
     db_item = DebtGoal(**debt.model_dump())
     db.add(db_item)
     db.commit()
-    db.refresh(db_item)
     return db_item
 
 @app.post("/income/log")
@@ -147,8 +140,7 @@ def log_weekly_income(income: IncomeInput, db: Session = Depends(get_db)):
         days_remaining = (active_debt.deadline - date.today()).days
         weeks_remaining = math.ceil(days_remaining / 7.0) if days_remaining > 0 else 1
         remaining_balance = active_debt.target_amount - active_debt.amount_paid
-        debt_deduction = math.ceil(remaining_balance / weeks_remaining)
-        debt_deduction = min(debt_deduction, income.amount, remaining_balance)
+        debt_deduction = min(math.ceil(remaining_balance / weeks_remaining), income.amount, remaining_balance)
         active_debt.amount_paid += debt_deduction
 
     rebuild_pool = income.amount - debt_deduction
@@ -157,8 +149,6 @@ def log_weekly_income(income: IncomeInput, db: Session = Depends(get_db)):
     db.commit()
     
     return {
-        "total_income": income.amount,
         "debt_cleared_this_week": debt_deduction,
-        "remaining_debt_balance": active_debt.target_amount - active_debt.amount_paid if active_debt else 0,
         "unlocked_rebuild_funds": rebuild_pool
     }
