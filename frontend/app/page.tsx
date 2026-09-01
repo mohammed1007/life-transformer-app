@@ -23,8 +23,7 @@ export default function Home() {
   // Fetch goals when the page loads
   const fetchGoals = async () => {
     try {
-      const response = await fetch("http://127.0.0.1:8000/goals");
-      if (response.ok) {
+const response = await fetch("https://reyvelour-life-transformer-api.hf.space/goals");      if (response.ok) {
         const data = await response.json();
         setGoals(data);
       }
@@ -43,8 +42,7 @@ export default function Home() {
     
     setLoading(true);
     try {
-      const response = await fetch("http://127.0.0.1:8000/extract", {
-        method: "POST",
+const response = await fetch("https://reyvelour-life-transformer-api.hf.space/extract", {        method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ url }),
       });
@@ -63,8 +61,7 @@ export default function Home() {
   const handleSaveGoal = async () => {
     if (!item) return;
     try {
-      const response = await fetch("http://127.0.0.1:8000/goals", {
-        method: "POST",
+const response = await fetch("https://reyvelour-life-transformer-api.hf.space/goals", {        method: "POST",
         headers: { "Content-Type": "application/json" },
         // Inject the selected currency into the payload
         body: JSON.stringify({ ...item, currency }), 
@@ -81,8 +78,7 @@ export default function Home() {
 
   const handleFundGoal = async (id: number, amount: number) => {
     try {
-      const response = await fetch(`http://127.0.0.1:8000/goals/${id}/fund`, {
-        method: "POST",
+const response = await fetch(`https://reyvelour-life-transformer-api.hf.space/goals/${id}/fund`, {        method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ amount }),
       });
