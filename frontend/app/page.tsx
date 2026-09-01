@@ -31,7 +31,7 @@ export default function Home() {
   const [url, setUrl] = useState("");
   const [titleInput, setTitleInput] = useState("");
   const [priceInput, setPriceInput] = useState("");
-  const [imageInput, setImageInput] = useState(""); // Holds the Base64 image string
+  const [imageInput, setImageInput] = useState(""); // Holds the compressed Base64 image string
   
   const [currency, setCurrency] = useState("EGP");
   const [category, setCategory] = useState("Maintenance");
@@ -74,13 +74,28 @@ export default function Home() {
     } catch (error) {}
   };
 
-  // Handle local image file selection & conversion to Base64
+  // Handle local image file selection with automatic browser-side compression
   const handleImageFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (file) {
       const reader = new FileReader();
-      reader.onloadend = () => {
-        setImageInput(reader.result as string);
+      reader.onload = (event) => {
+        const img = new Image();
+        img.onload = () => {
+          const canvas = document.createElement('canvas');
+          const MAX_WIDTH = 400; // Resize to max 400px width to keep file size tiny
+          const scaleSize = MAX_WIDTH / img.width;
+          canvas.width = MAX_WIDTH;
+          canvas.height = img.height * scaleSize;
+          
+          const ctx = canvas.getContext('2d');
+          ctx?.drawImage(img, 0, 0, canvas.width, canvas.height);
+          
+          // Convert to compressed JPEG
+          const compressedBase64 = canvas.toDataURL('image/jpeg', 0.7);
+          setImageInput(compressedBase64);
+        };
+        img.src = event.target?.result as string;
       };
       reader.readAsDataURL(file);
     }
@@ -108,6 +123,14 @@ export default function Home() {
         }),
       });
 
+      const responseText = await res.text();
+      let data;
+      try {
+        data = JSON.parse(responseText);
+      } catch {
+        throw new Error(`Server rejected request or payload too large. Status: ${res.status}`);
+      }
+
       if (res.ok) { 
         setTitleInput(""); 
         setPriceInput(""); 
@@ -116,11 +139,10 @@ export default function Home() {
         setShowFabModal(false); 
         fetchData(); 
       } else {
-        const errorData = await res.json();
-        alert(`Server error: ${JSON.stringify(errorData)}`);
+        alert(`Server error: ${JSON.stringify(data)}`);
       }
-    } catch (error) {
-      alert(`Connection failed or image file is too large: ${error}`);
+    } catch (error: any) {
+      alert(`Failed to save: ${error.message || error}`);
     }
   };
 
@@ -315,7 +337,7 @@ export default function Home() {
           
           <form onSubmit={handleSaveGoal} className="flex flex-col gap-4 pb-12">
             
-            {/* Direct Image File Upload Field */}
+            {/* Direct Image File Upload Field with Auto-Compression */}
             <div className="bg-white/5 rounded-2xl p-4 border border-white/10 flex items-center gap-4">
               <div className="w-16 h-16 rounded-xl bg-black/40 overflow-hidden flex items-center justify-center shrink-0 border border-white/10">
                 {imageInput ? (
