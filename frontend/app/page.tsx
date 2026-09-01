@@ -16,7 +16,6 @@ interface Goal {
 }
 
 interface Debt {
-  id: number;
   name: string;
   target_amount: number;
   amount_paid: number;
@@ -31,12 +30,13 @@ export default function Home() {
   const [url, setUrl] = useState("");
   const [titleInput, setTitleInput] = useState("");
   const [priceInput, setPriceInput] = useState("");
-  const [imageInput, setImageInput] = useState(""); // Holds the compressed Base64 image string
+  const [imageInput, setImageInput] = useState(""); 
   
   const [currency, setCurrency] = useState("EGP");
   const [category, setCategory] = useState("Maintenance");
   const [tier, setTier] = useState("NOW");
   
+  // Local state initialized from localStorage
   const [goals, setGoals] = useState<Goal[]>([]);
   const [activeDebt, setActiveDebt] = useState<Debt | null>(null);
   
@@ -50,31 +50,62 @@ export default function Home() {
     { id: 4, text: 'Sunday: Nails, Beard Shape, Exfoliate', done: false },
   ]);
 
-  const API_URL = "https://reyvelour-life-transformer-api.hf.space";
+  // Admin Liability Form State
+  const [debtNameInput, setDebtNameInput] = useState("");
+  const [debtTargetInput, setDebtTargetInput] = useState("");
+  const [debtDeadlineInput, setDebtDeadlineInput] = useState("");
 
-  const fetchData = async () => {
-    try {
-      const [goalsRes, debtRes] = await Promise.all([fetch(`${API_URL}/goals`), fetch(`${API_URL}/debts/active`)]);
-      if (goalsRes.ok) setGoals(await goalsRes.json());
-      if (debtRes.ok) setActiveDebt(await debtRes.json());
-    } catch (error) {}
+  // Load data from localStorage on mount
+  useEffect(() => {
+    const savedGoals = localStorage.getItem("life_transformer_goals");
+    const savedDebt = localStorage.getItem("life_transformer_debt");
+    const savedRoutines = localStorage.getItem("life_transformer_routines");
+
+    if (savedGoals) setGoals(JSON.parse(savedGoals));
+    if (savedDebt) setActiveDebt(JSON.parse(savedDebt));
+    if (savedRoutines) setRoutines(JSON.parse(savedRoutines));
+  }, []);
+
+  // Save helpers
+  const saveGoalsToLocal = (newGoals: Goal[]) => {
+    setGoals(newGoals);
+    localStorage.setItem("life_transformer_goals", JSON.stringify(newGoals));
   };
 
-  useEffect(() => { fetchData(); }, []);
+  const saveDebtToLocal = (debt: Debt | null) => {
+    setActiveDebt(debt);
+    if (debt) {
+      localStorage.setItem("life_transformer_debt", JSON.stringify(debt));
+    } else {
+      localStorage.removeItem("life_transformer_debt");
+    }
+  };
 
-  const handleLogIncome = async (e: React.FormEvent) => {
+  // Monday Payday Routing Engine (Local math)
+  const handleLogIncome = (e: React.FormEvent) => {
     e.preventDefault();
-    if (!incomeAmount) return;
-    try {
-      const res = await fetch(`${API_URL}/income/log`, {
-        method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ amount: parseInt(incomeAmount) }),
-      });
-      if (res.ok) { setPaydayResult(await res.json()); setIncomeAmount(""); fetchData(); }
-    } catch (error) {}
+    const income = parseInt(incomeAmount);
+    if (!income) return;
+
+    let debtDeducted = 0;
+    if (activeDebt && activeDebt.amount_paid < activeDebt.target_amount) {
+      // Simple weekly split calculation
+      const remainingBalance = activeDebt.target_amount - activeDebt.amount_paid;
+      debtDeducted = Math.min(Math.ceil(remainingBalance / 4), income, remainingBalance);
+      
+      const updatedDebt = { ...activeDebt, amount_paid: activeDebt.amount_paid + debtDeducted };
+      saveDebtToLocal(updatedDebt);
+    }
+
+    const rebuildPool = income - debtDeducted;
+    setPaydayResult({
+      debt_cleared_this_week: debtDeducted,
+      unlocked_rebuild_funds: rebuildPool
+    });
+    setIncomeAmount("");
   };
 
-  // Handle local image file selection with automatic browser-side compression
+  // Handle local image file compression
   const handleImageFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (file) {
@@ -83,17 +114,14 @@ export default function Home() {
         const img = new Image();
         img.onload = () => {
           const canvas = document.createElement('canvas');
-          const MAX_WIDTH = 400; // Resize to max 400px width to keep file size tiny
+          const MAX_WIDTH = 300; 
           const scaleSize = MAX_WIDTH / img.width;
           canvas.width = MAX_WIDTH;
           canvas.height = img.height * scaleSize;
           
           const ctx = canvas.getContext('2d');
           ctx?.drawImage(img, 0, 0, canvas.width, canvas.height);
-          
-          // Convert to compressed JPEG
-          const compressedBase64 = canvas.toDataURL('image/jpeg', 0.7);
-          setImageInput(compressedBase64);
+          setImageInput(canvas.toDataURL('image/jpeg', 0.6));
         };
         img.src = event.target?.result as string;
       };
@@ -101,69 +129,65 @@ export default function Home() {
     }
   };
 
-  const handleSaveGoal = async (e: React.FormEvent) => {
+  const handleSaveGoal = (e: React.FormEvent) => {
     e.preventDefault();
     if (!titleInput || !priceInput) {
       alert("Please fill in both the Product Title and Price!");
       return;
     }
 
-    try {
-      const res = await fetch(`${API_URL}/goals`, {
-        method: "POST", 
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ 
-          title: titleInput, 
-          price: priceInput, 
-          currency, 
-          category, 
-          tier, 
-          image_url: imageInput || "https://images.unsplash.com/photo-1584308666744-24d5c474f2ae?w=500&auto=format&fit=crop&q=60",
-          original_url: url || "#"
-        }),
-      });
+    const newGoal: Goal = {
+      id: Date.now(),
+      title: titleInput,
+      price: priceInput,
+      currency,
+      category,
+      tier,
+      stock_status: "IN_STOCK",
+      image_url: imageInput || "https://images.unsplash.com/photo-1584308666744-24d5c474f2ae?w=500&auto=format&fit=crop&q=60",
+      original_url: url || "#",
+      funded_amount: 0
+    };
 
-      const responseText = await res.text();
-      let data;
-      try {
-        data = JSON.parse(responseText);
-      } catch {
-        throw new Error(`Server rejected request or payload too large. Status: ${res.status}`);
-      }
-
-      if (res.ok) { 
-        setTitleInput(""); 
-        setPriceInput(""); 
-        setImageInput(""); 
-        setUrl("");
-        setShowFabModal(false); 
-        fetchData(); 
-      } else {
-        alert(`Server error: ${JSON.stringify(data)}`);
-      }
-    } catch (error: any) {
-      alert(`Failed to save: ${error.message || error}`);
-    }
+    saveGoalsToLocal([newGoal, ...goals]);
+    setTitleInput("");
+    setPriceInput("");
+    setImageInput("");
+    setUrl("");
+    setShowFabModal(false);
   };
 
-  const handleFundGoal = async (id: number, amount: number) => {
-    await fetch(`${API_URL}/goals/${id}/fund`, {
-      method: "POST", headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ amount }),
-    });
-    fetchData();
+  const handleFundGoal = (id: number, amount: number) => {
+    const updated = goals.map(g => g.id === id ? { ...g, funded_amount: g.funded_amount + amount } : g);
+    saveGoalsToLocal(updated);
   };
 
-  const toggleStockStatus = async (goal: Goal) => {
+  const toggleStockStatus = (goal: Goal) => {
     const sequence: Record<string, string> = { "IN_STOCK": "LOW", "LOW": "OUT", "OUT": "IN_STOCK" };
     const newStatus = sequence[goal.stock_status || "IN_STOCK"];
-    
-    setGoals(goals.map(g => g.id === goal.id ? { ...g, stock_status: newStatus as any } : g));
-    
-    await fetch(`${API_URL}/goals/${goal.id}/stock`, {
-      method: "PUT", headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ status: newStatus }),
-    });
+    const updated = goals.map(g => g.id === goal.id ? { ...g, stock_status: newStatus as any } : g);
+    saveGoalsToLocal(updated);
+  };
+
+  const handleCreateDebt = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!debtNameInput || !debtTargetInput) return;
+    const newDebt: Debt = {
+      name: debtNameInput,
+      target_amount: parseInt(debtTargetInput),
+      amount_paid: 0,
+      deadline: debtDeadlineInput || "2026-10-05"
+    };
+    saveDebtToLocal(newDebt);
+    setDebtNameInput("");
+    setDebtTargetInput("");
+    setDebtDeadlineInput("");
+  };
+
+  const toggleRoutine = (id: number) => {
+    const updated = routines.map(r => r.id === id ? { ...r, done: !r.done } : r);
+    setRoutines(updated);
+    localStorage.setItem("life_transformer_routines", JSON.stringify(updated));
   };
 
   const filteredGoals = goals.filter(g => g.tier === activeTier);
@@ -191,7 +215,7 @@ export default function Home() {
         {activeTab === "vault" && (
           <div className="animate-in fade-in slide-in-from-bottom-4 duration-500 flex flex-col gap-6">
             <div className="bg-white/5 backdrop-blur-2xl border border-white/10 rounded-3xl p-6 shadow-lg">
-              <h2 className="text-[10px] font-bold text-white/50 uppercase tracking-widest mb-4">Monday Split Engine</h2>
+              <h2 className="text-[10px] font-bold text-white/50 uppercase tracking-widest mb-4">Monday Split Engine (Local)</h2>
               <form onSubmit={handleLogIncome} className="flex flex-col gap-4">
                 <div className="bg-black/20 rounded-2xl p-4 border border-white/5">
                   <label className="block text-[10px] text-white/50 font-bold mb-1 uppercase tracking-wider">Expected Payout</label>
@@ -220,7 +244,6 @@ export default function Home() {
               ))}
             </div>
 
-            {/* THE INVENTORY VIEW (NOW TIER ONLY) */}
             {activeTier === "NOW" ? (
               <div className="space-y-4">
                 {restockCostEGP > 0 && (
@@ -262,10 +285,11 @@ export default function Home() {
                     </button>
                   </div>
                 ))}
+                {filteredGoals.length === 0 && (
+                  <p className="text-white/40 text-center py-8 text-sm">No essentials tracked in NOW.</p>
+                )}
               </div>
             ) : (
-              
-              /* THE WISHLIST VIEW (NEXT, LATER, DREAM) */
               <div className="grid grid-cols-1 gap-6">
                 {filteredGoals.map((goal) => {
                   const targetPrice = parseFloat(goal.price.replace(/[^0-9.-]+/g,"")) || 1; 
@@ -301,7 +325,7 @@ export default function Home() {
         {activeTab === "systems" && (
           <div className="animate-in fade-in slide-in-from-bottom-4 duration-500 flex flex-col gap-4">
             {routines.map(item => (
-              <button key={item.id} onClick={() => setRoutines(routines.map(r => r.id === item.id ? { ...r, done: !r.done } : r))} className={`flex items-center gap-4 w-full text-left p-5 rounded-3xl border transition-all duration-300 ${item.done ? 'bg-white/5 border-white/5 opacity-50' : 'bg-white/10 border-white/10'}`}>
+              <button key={item.id} onClick={() => toggleRoutine(item.id)} className={`flex items-center gap-4 w-full text-left p-5 rounded-3xl border transition-all duration-300 ${item.done ? 'bg-white/5 border-white/5 opacity-50' : 'bg-white/10 border-white/10'}`}>
                 {item.done ? <CheckSquare className="text-green-400" size={24} /> : <Square className="text-white/40" size={24} />}
                 <span className={`${item.done ? 'line-through text-white/30' : 'text-white/90'} text-sm font-medium`}>{item.text}</span>
               </button>
@@ -321,7 +345,17 @@ export default function Home() {
                     <div className="h-full bg-red-500" style={{ width: `${Math.min((activeDebt.amount_paid / activeDebt.target_amount) * 100, 100)}%` }}></div>
                   </div>
                 </div>
-              ) : <p className="text-white/40 text-sm">No active debt tracking.</p>}
+              ) : <p className="text-white/40 text-sm mb-4">No active debt tracking.</p>}
+            </div>
+
+            <div className="bg-white/5 border border-white/10 rounded-3xl p-6 shadow-lg">
+              <h2 className="text-[10px] font-bold text-white/50 uppercase tracking-widest mb-4">Set Liability Target</h2>
+              <form onSubmit={handleCreateDebt} className="flex flex-col gap-4">
+                <input type="text" value={debtNameInput} onChange={(e) => setDebtNameInput(e.target.value)} placeholder="Objective Name (e.g. October Debt)" className="bg-black/20 border border-white/5 rounded-2xl px-4 py-3 text-white text-sm outline-none" required />
+                <input type="number" value={debtTargetInput} onChange={(e) => setDebtTargetInput(e.target.value)} placeholder="Total Amount" className="bg-black/20 border border-white/5 rounded-2xl px-4 py-3 text-white text-sm outline-none" required />
+                <input type="date" value={debtDeadlineInput} onChange={(e) => setDebtDeadlineInput(e.target.value)} className="bg-black/20 border border-white/5 rounded-2xl px-4 py-3 text-white text-sm outline-none" required />
+                <button type="submit" className="w-full bg-red-500/20 border border-red-500/30 text-red-400 font-bold py-3.5 rounded-2xl">Save Liability</button>
+              </form>
             </div>
           </div>
         )}
@@ -337,7 +371,6 @@ export default function Home() {
           
           <form onSubmit={handleSaveGoal} className="flex flex-col gap-4 pb-12">
             
-            {/* Direct Image File Upload Field with Auto-Compression */}
             <div className="bg-white/5 rounded-2xl p-4 border border-white/10 flex items-center gap-4">
               <div className="w-16 h-16 rounded-xl bg-black/40 overflow-hidden flex items-center justify-center shrink-0 border border-white/10">
                 {imageInput ? (
@@ -398,7 +431,7 @@ export default function Home() {
             </div>
 
             <div className="bg-white/5 rounded-2xl p-4 border border-white/10">
-              <label className="block text-[10px] text-white/50 font-bold mb-1 uppercase tracking-wider">Product Link (Optional Reference)</label>
+              <label className="block text-[10px] text-white/50 font-bold mb-1 uppercase tracking-wider">Product Link (Optional)</label>
               <input type="url" value={url} onChange={(e) => setUrl(e.target.value)} placeholder="https://noon.com/..." className="w-full bg-transparent text-xs text-white outline-none placeholder:text-white/20" />
             </div>
 
