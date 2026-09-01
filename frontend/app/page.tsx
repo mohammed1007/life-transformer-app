@@ -1,6 +1,6 @@
 "use client";
 import { useState, useEffect } from "react";
-import { Wallet, Map, Activity, ShieldCheck, Plus, X, ArrowRight, CheckSquare, Square, Package, AlertTriangle, XCircle, ShoppingCart } from 'lucide-react';
+import { Wallet, Map, Activity, ShieldCheck, Plus, X, ArrowRight, CheckSquare, Square, Package, AlertTriangle, XCircle, ShoppingCart, Image as ImageIcon } from 'lucide-react';
 
 interface Goal {
   id: number;
@@ -31,7 +31,7 @@ export default function Home() {
   const [url, setUrl] = useState("");
   const [titleInput, setTitleInput] = useState("");
   const [priceInput, setPriceInput] = useState("");
-  const [imageInput, setImageInput] = useState("");
+  const [imageInput, setImageInput] = useState(""); // Holds the Base64 image string
   
   const [currency, setCurrency] = useState("EGP");
   const [category, setCategory] = useState("Maintenance");
@@ -72,6 +72,18 @@ export default function Home() {
       });
       if (res.ok) { setPaydayResult(await res.json()); setIncomeAmount(""); fetchData(); }
     } catch (error) {}
+  };
+
+  // Handle local image file selection & conversion to Base64
+  const handleImageFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (file) {
+      const reader = new FileReader();
+      reader.onloadend = () => {
+        setImageInput(reader.result as string);
+      };
+      reader.readAsDataURL(file);
+    }
   };
 
   const handleSaveGoal = async (e: React.FormEvent) => {
@@ -284,15 +296,36 @@ export default function Home() {
         )}
       </main>
 
-      {/* FAB MODAL FOR DIRECT MANUAL ENTRY */}
+      {/* FAB MODAL FOR DIRECT MANUAL ENTRY & PHOTO UPLOAD */}
       {showFabModal && (
         <div className="fixed inset-0 bg-black/95 backdrop-blur-3xl z-50 p-6 flex flex-col animate-in fade-in overflow-y-auto">
           <div className="flex justify-between items-center mb-6 mt-4">
-            <h3 className="text-2xl font-bold text-white tracking-tight">Add Item Manually</h3>
+            <h3 className="text-2xl font-bold text-white tracking-tight">Add Item & Photo</h3>
             <button aria-label="Close" onClick={() => setShowFabModal(false)} className="p-3 bg-white/10 rounded-full hover:bg-white/20 transition-colors"><X size={20} className="text-white" /></button>
           </div>
           
           <form onSubmit={handleSaveGoal} className="flex flex-col gap-4 pb-12">
+            
+            {/* Direct Image File Upload Field */}
+            <div className="bg-white/5 rounded-2xl p-4 border border-white/10 flex items-center gap-4">
+              <div className="w-16 h-16 rounded-xl bg-black/40 overflow-hidden flex items-center justify-center shrink-0 border border-white/10">
+                {imageInput ? (
+                  <img src={imageInput} alt="Preview" className="w-full h-full object-cover" />
+                ) : (
+                  <ImageIcon className="text-white/30" size={24} />
+                )}
+              </div>
+              <div className="flex-1">
+                <label className="block text-[10px] text-white/50 font-bold mb-1 uppercase tracking-wider">Product Photo</label>
+                <input 
+                  type="file" 
+                  accept="image/*" 
+                  onChange={handleImageFileChange} 
+                  className="w-full text-xs text-white/70 file:mr-4 file:py-2 file:px-4 file:rounded-xl file:border-0 file:text-xs file:font-bold file:bg-white/10 file:text-white hover:file:bg-white/20 file:cursor-pointer" 
+                />
+              </div>
+            </div>
+
             <div className="bg-white/5 rounded-2xl p-4 border border-white/10">
               <label className="block text-[10px] text-white/50 font-bold mb-1 uppercase tracking-wider">Product Title</label>
               <input type="text" value={titleInput} onChange={(e) => setTitleInput(e.target.value)} placeholder="e.g. Daily Moisturizer or MSI Laptop" className="w-full bg-transparent text-lg font-bold text-white outline-none placeholder:text-white/20" required />
@@ -336,11 +369,6 @@ export default function Home() {
             <div className="bg-white/5 rounded-2xl p-4 border border-white/10">
               <label className="block text-[10px] text-white/50 font-bold mb-1 uppercase tracking-wider">Product Link (Optional Reference)</label>
               <input type="url" value={url} onChange={(e) => setUrl(e.target.value)} placeholder="https://noon.com/..." className="w-full bg-transparent text-xs text-white outline-none placeholder:text-white/20" />
-            </div>
-
-            <div className="bg-white/5 rounded-2xl p-4 border border-white/10">
-              <label className="block text-[10px] text-white/50 font-bold mb-1 uppercase tracking-wider">Image URL (Optional)</label>
-              <input type="url" value={imageInput} onChange={(e) => setImageInput(e.target.value)} placeholder="Paste copied image address..." className="w-full bg-transparent text-xs text-white outline-none placeholder:text-white/20" />
             </div>
 
             <button type="submit" className="w-full bg-green-500 hover:bg-green-400 text-black py-4 rounded-2xl font-bold mt-4 text-lg transition-all shadow-[0_0_30px_rgba(34,197,94,0.3)]">
