@@ -29,8 +29,10 @@ export default function Home() {
   const [showFabModal, setShowFabModal] = useState(false);
   
   const [url, setUrl] = useState("");
-  const [loading, setLoading] = useState(false);
-  const [item, setItem] = useState<{ title: string; image_url: string; price: string; original_url: string } | null>(null);
+  const [titleInput, setTitleInput] = useState("");
+  const [priceInput, setPriceInput] = useState("");
+  const [imageInput, setImageInput] = useState("");
+  
   const [currency, setCurrency] = useState("EGP");
   const [category, setCategory] = useState("Maintenance");
   const [tier, setTier] = useState("NOW");
@@ -72,50 +74,32 @@ export default function Home() {
     } catch (error) {}
   };
 
-  const handleExtract = async (e: React.FormEvent) => {
+  const handleSaveGoal = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!url) return;
-    setLoading(true);
-    try {
-      const res = await fetch(`${API_URL}/extract`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ url }),
-      });
-      
-      if (res.ok) {
-        const data = await res.json();
-        setItem(data);
-      } else {
-        // Fallback card if server returns non-200
-        setItem({
-          title: "New Item",
-          image_url: "https://images.unsplash.com/photo-1584308666744-24d5c474f2ae?w=500&auto=format&fit=crop&q=60",
-          price: "100",
-          original_url: url,
-        });
-      }
-      setUrl("");
-    } catch (error) {
-      // Fallback card if network fails
-      setItem({
-        title: "New Item",
-        image_url: "https://images.unsplash.com/photo-1584308666744-24d5c474f2ae?w=500&auto=format&fit=crop&q=60",
-        price: "100",
-        original_url: url,
-      });
-    }
-    setLoading(false);
-  };
+    if (!titleInput || !priceInput) return;
 
-  const handleSaveGoal = async () => {
-    if (!item) return;
     try {
       const res = await fetch(`${API_URL}/goals`, {
-        method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ ...item, currency, category, tier }),
+        method: "POST", 
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ 
+          title: titleInput, 
+          price: priceInput, 
+          currency, 
+          category, 
+          tier, 
+          image_url: imageInput || "https://images.unsplash.com/photo-1584308666744-24d5c474f2ae?w=500&auto=format&fit=crop&q=60",
+          original_url: url || "#"
+        }),
       });
-      if (res.ok) { setItem(null); setShowFabModal(false); fetchData(); }
+      if (res.ok) { 
+        setTitleInput(""); 
+        setPriceInput(""); 
+        setImageInput(""); 
+        setUrl("");
+        setShowFabModal(false); 
+        fetchData(); 
+      }
     } catch (error) {}
   };
 
@@ -131,7 +115,6 @@ export default function Home() {
     const sequence: Record<string, string> = { "IN_STOCK": "LOW", "LOW": "OUT", "OUT": "IN_STOCK" };
     const newStatus = sequence[goal.stock_status || "IN_STOCK"];
     
-    // Optimistic UI update
     setGoals(goals.map(g => g.id === goal.id ? { ...g, stock_status: newStatus as any } : g));
     
     await fetch(`${API_URL}/goals/${goal.id}/stock`, {
@@ -142,7 +125,6 @@ export default function Home() {
 
   const filteredGoals = goals.filter(g => g.tier === activeTier);
   
-  // Calculate upcoming restock cost for NOW tier items marked LOW or OUT
   const restockCostEGP = goals.filter(g => g.tier === "NOW" && g.stock_status !== "IN_STOCK" && g.currency === "EGP")
     .reduce((sum, g) => sum + (parseFloat(g.price.replace(/[^0-9.-]+/g,"")) || 0), 0);
 
@@ -218,7 +200,7 @@ export default function Home() {
                     </div>
                     <div className="flex-1">
                       <h3 className="font-bold text-sm text-white line-clamp-1">{goal.title}</h3>
-                      <span className="text-white/50 text-xs font-bold">{goal.price}</span>
+                      <span className="text-white/50 text-xs font-bold">{goal.price} {goal.currency}</span>
                     </div>
                     <button 
                       onClick={() => toggleStockStatus(goal)}
@@ -254,7 +236,7 @@ export default function Home() {
                         <h3 className="font-bold text-lg line-clamp-2 mb-4 text-white leading-tight">{goal.title}</h3>
                         <div className="flex justify-between items-end mb-2">
                           <span className="text-white/50 text-xs font-bold">{goal.currency === "EGP" ? "E£" : "$"}{goal.funded_amount} SAVED</span>
-                          <span className="font-bold text-white text-lg">{goal.price}</span>
+                          <span className="font-bold text-white text-lg">{goal.price} {goal.currency}</span>
                         </div>
                         <div className="h-2 w-full bg-black/40 rounded-full overflow-hidden mb-6 border border-white/5">
                           <div className="h-full bg-green-500 transition-all duration-1000" style={{ width: `${progressPercent}%` }}></div>
@@ -302,54 +284,69 @@ export default function Home() {
         )}
       </main>
 
-      {/* FAB MODAL */}
+      {/* FAB MODAL FOR DIRECT MANUAL ENTRY */}
       {showFabModal && (
-        <div className="fixed inset-0 bg-black/95 backdrop-blur-3xl z-50 p-6 flex flex-col animate-in fade-in">
-          <div className="flex justify-between items-center mb-8 mt-4">
-            <h3 className="text-2xl font-bold text-white tracking-tight">Add to Blueprint</h3>
-            <button aria-label="Close" onClick={() => {setShowFabModal(false); setItem(null);}} className="p-3 bg-white/10 rounded-full hover:bg-white/20 transition-colors"><X size={20} className="text-white" /></button>
+        <div className="fixed inset-0 bg-black/95 backdrop-blur-3xl z-50 p-6 flex flex-col animate-in fade-in overflow-y-auto">
+          <div className="flex justify-between items-center mb-6 mt-4">
+            <h3 className="text-2xl font-bold text-white tracking-tight">Add Item Manually</h3>
+            <button aria-label="Close" onClick={() => setShowFabModal(false)} className="p-3 bg-white/10 rounded-full hover:bg-white/20 transition-colors"><X size={20} className="text-white" /></button>
           </div>
           
-          <div className="flex-1">
-            {!item ? (
-              <form onSubmit={handleExtract} className="flex gap-2">
-                <input type="url" value={url} onChange={(e) => setUrl(e.target.value)} placeholder="Paste link here..." className="flex-1 bg-white/5 border border-white/10 rounded-2xl px-5 py-4 focus:outline-none focus:border-green-500 transition-colors text-white" required />
-                <button type="submit" disabled={loading} className="bg-white text-black px-6 py-4 rounded-2xl font-bold">{loading ? "..." : "Pull"}</button>
-              </form>
-            ) : (
-              <div className="flex flex-col gap-4 animate-in slide-in-from-bottom-4">
-                <div className="bg-white/5 rounded-2xl p-4 border border-white/10">
-                  <label className="block text-[10px] text-white/50 font-bold mb-1 uppercase tracking-wider">Title</label>
-                  <input type="text" value={item.title} onChange={(e) => setItem({ ...item, title: e.target.value })} className="w-full bg-transparent text-lg font-bold text-white outline-none" />
-                </div>
-                <div className="flex gap-4">
-                  <div className="flex-1 bg-white/5 rounded-2xl p-4 border border-white/10">
-                    <label className="block text-[10px] text-white/50 font-bold mb-1 uppercase tracking-wider">Phase</label>
-                    <select value={tier} onChange={(e) => setTier(e.target.value)} className="w-full bg-transparent text-white font-bold outline-none appearance-none">
-                      <option value="NOW">NOW (Inventory)</option>
-                      <option value="NEXT">NEXT (Wishlist)</option>
-                      <option value="LATER">LATER (Wishlist)</option>
-                      <option value="DREAM">DREAM (Wishlist)</option>
-                    </select>
-                  </div>
-                </div>
-                <div className="flex gap-4">
-                  <div className="w-1/3 bg-white/5 rounded-2xl p-4 border border-white/10">
-                    <label className="block text-[10px] text-white/50 font-bold mb-1 uppercase tracking-wider">Currency</label>
-                    <select value={currency} onChange={(e) => setCurrency(e.target.value)} className="w-full bg-transparent text-white font-bold outline-none appearance-none">
-                      <option value="EGP">EGP</option><option value="USD">USD</option>
-                    </select>
-                  </div>
-                  <div className="flex-1 bg-black/20 rounded-2xl p-4 border border-green-500/30 flex items-center justify-center">
-                    <span className="text-2xl font-black text-green-400">{item.price}</span>
-                  </div>
-                </div>
-                <button onClick={handleSaveGoal} className="w-full bg-green-500 hover:bg-green-400 text-black py-4 rounded-2xl font-bold mt-4 text-lg transition-all shadow-[0_0_30px_rgba(34,197,94,0.3)]">
-                  Lock into Roadmap
-                </button>
+          <form onSubmit={handleSaveGoal} className="flex flex-col gap-4 pb-12">
+            <div className="bg-white/5 rounded-2xl p-4 border border-white/10">
+              <label className="block text-[10px] text-white/50 font-bold mb-1 uppercase tracking-wider">Product Title</label>
+              <input type="text" value={titleInput} onChange={(e) => setTitleInput(e.target.value)} placeholder="e.g. Daily Moisturizer or MSI Laptop" className="w-full bg-transparent text-lg font-bold text-white outline-none placeholder:text-white/20" required />
+            </div>
+
+            <div className="flex gap-4">
+              <div className="flex-1 bg-white/5 rounded-2xl p-4 border border-white/10">
+                <label className="block text-[10px] text-white/50 font-bold mb-1 uppercase tracking-wider">Phase / Tier</label>
+                <select value={tier} onChange={(e) => setTier(e.target.value)} className="w-full bg-transparent text-white font-bold outline-none appearance-none">
+                  <option value="NOW">NOW (Inventory / Essentials)</option>
+                  <option value="NEXT">NEXT (Short-term Wishlist)</option>
+                  <option value="LATER">LATER (Medium-term)</option>
+                  <option value="DREAM">DREAM (Major Goals)</option>
+                </select>
               </div>
-            )}
-          </div>
+              <div className="flex-1 bg-white/5 rounded-2xl p-4 border border-white/10">
+                <label className="block text-[10px] text-white/50 font-bold mb-1 uppercase tracking-wider">Category</label>
+                <select value={category} onChange={(e) => setCategory(e.target.value)} className="w-full bg-transparent text-white font-bold outline-none appearance-none">
+                  <option value="Maintenance">Maintenance</option>
+                  <option value="Room">Room</option>
+                  <option value="Body">Body</option>
+                  <option value="Procedure">Procedure</option>
+                </select>
+              </div>
+            </div>
+
+            <div className="flex gap-4">
+              <div className="w-1/3 bg-white/5 rounded-2xl p-4 border border-white/10">
+                <label className="block text-[10px] text-white/50 font-bold mb-1 uppercase tracking-wider">Currency</label>
+                <select value={currency} onChange={(e) => setCurrency(e.target.value)} className="w-full bg-transparent text-white font-bold outline-none appearance-none">
+                  <option value="EGP">EGP</option>
+                  <option value="USD">USD</option>
+                </select>
+              </div>
+              <div className="flex-1 bg-black/20 rounded-2xl p-4 border border-green-500/30 flex flex-col justify-center">
+                <label className="block text-[10px] text-white/50 font-bold mb-1 uppercase tracking-wider">Price</label>
+                <input type="text" value={priceInput} onChange={(e) => setPriceInput(e.target.value)} placeholder="0.00" className="w-full bg-transparent text-2xl font-black text-green-400 outline-none placeholder:text-green-900" required />
+              </div>
+            </div>
+
+            <div className="bg-white/5 rounded-2xl p-4 border border-white/10">
+              <label className="block text-[10px] text-white/50 font-bold mb-1 uppercase tracking-wider">Product Link (Optional Reference)</label>
+              <input type="url" value={url} onChange={(e) => setUrl(e.target.value)} placeholder="https://noon.com/..." className="w-full bg-transparent text-xs text-white outline-none placeholder:text-white/20" />
+            </div>
+
+            <div className="bg-white/5 rounded-2xl p-4 border border-white/10">
+              <label className="block text-[10px] text-white/50 font-bold mb-1 uppercase tracking-wider">Image URL (Optional)</label>
+              <input type="url" value={imageInput} onChange={(e) => setImageInput(e.target.value)} placeholder="Paste copied image address..." className="w-full bg-transparent text-xs text-white outline-none placeholder:text-white/20" />
+            </div>
+
+            <button type="submit" className="w-full bg-green-500 hover:bg-green-400 text-black py-4 rounded-2xl font-bold mt-4 text-lg transition-all shadow-[0_0_30px_rgba(34,197,94,0.3)]">
+              Lock into Roadmap
+            </button>
+          </form>
         </div>
       )}
 
