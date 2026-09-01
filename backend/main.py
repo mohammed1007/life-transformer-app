@@ -7,6 +7,7 @@ from sqlalchemy import create_engine, Column, Integer, String, Date
 from sqlalchemy.orm import declarative_base, sessionmaker, Session
 from datetime import date
 import math
+import json
 
 SQLALCHEMY_DATABASE_URL = "postgresql://neondb_owner:npg_mru9dS0neBfc@ep-wild-lake-axnh5t98-pooler.c-4.us-east-2.aws.neon.tech/neondb?sslmode=require&channel_binding=require"
 engine = create_engine(SQLALCHEMY_DATABASE_URL)
@@ -73,25 +74,53 @@ class GoalCreate(BaseModel):
 
 @app.post("/extract")
 def extract_item_data(request: URLRequest):
-    headers = {"User-Agent": "Mozilla/5.0"}
+    headers = {
+        "User-Agent": "Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Mobile/15E148 Safari/604.1",
+        "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+        "Accept-Language": "en-US,en;q=0.9",
+    }
+    
+    title = ""
+    image_url = ""
+    price = "0"
+
     try:
-        response = requests.get(request.url, headers=headers, timeout=10)
-        response.raise_for_status()
+        response = requests.get(request.url, headers=headers, timeout=8, allow_redirects=True)
         soup = BeautifulSoup(response.text, 'html.parser')
         
-        title = soup.find(id="productTitle")
-        title = title.get_text(strip=True) if title else getattr(soup.find("meta", property="og:title"), "content", "Unknown Item")
-            
-        image = soup.find(id="landingImage") or soup.find(id="imgBlkFront")
-        image_url = image["src"] if image and image.has_attr("src") else getattr(soup.find("meta", property="og:image"), "content", "")
-            
-        price_tag = soup.select_one("span.a-price span.a-offscreen")
-        price = price_tag.get_text(strip=True) if price_tag else getattr(soup.find("meta", property="product:price:amount"), "content", "$0.00")
-            
-        return {"title": title, "image_url": image_url, "price": price, "original_url": request.url}
-    except Exception as e:
-        raise HTTPException(status_code=400, detail=str(e))
+        # 1. Scrape Title
+        og_title = soup.find("meta", property="og:title") or soup.find("meta", attrs={"name": "title"})
+        product_title = soup.find(id="productTitle")
+        if product_title:
+            title = product_title.get_text(strip=True)
+        elif og_title and og_title.get("content"):
+            title = og_title["content"].strip()
+        elif soup.title:
+            title = soup.title.string.strip()
 
+        # 2. Scrape Image
+        og_image = soup.find("meta", property="og:image") or soup.find("meta", attrs={"name": "twitter:image"})
+        landing_image = soup.find(id="landingImage") or soup.find(id="imgBlkFront")
+        if og_image and og_image.get("content"):
+            image_url = og_image["content"]
+        elif landing_image and landing_image.get("src"):
+            image_url = landing_image["src"]
+
+        # 3. Scrape Price
+        price_tag = soup.select_one("span.a-price span.a-offscreen") or soup.find("meta", property="product:price:amount")
+        if price_tag:
+            price = price_tag.get_text(strip=True) if hasattr(price_tag, "get_text") else price_tag.get("content", "0")
+            
+    except Exception as e:
+        print(f"Extraction error: {e}")
+
+    # Fallback guarantees the modal always opens on your phone even if scraping is blocked
+    return {
+        "title": title or "New Item",
+        "image_url": image_url or "https://images.unsplash.com/photo-1584308666744-24d5c474f2ae?w=500&auto=format&fit=crop&q=60",
+        "price": price if price != "0" else "100",
+        "original_url": request.url
+    }
 @app.post("/goals")
 def save_goal(goal: GoalCreate, db: Session = Depends(get_db)):
     db_item = GoalItem(**goal.model_dump())
