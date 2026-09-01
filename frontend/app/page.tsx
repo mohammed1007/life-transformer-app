@@ -6,6 +6,8 @@ interface Goal {
   title: string;
   price: string;
   currency: string;
+  category: string;
+  tier: string;
   image_url: string;
   original_url: string;
   funded_amount: number;
@@ -20,20 +22,21 @@ interface Debt {
 }
 
 export default function Home() {
-  const [activeTab, setActiveTab] = useState<"board" | "settings">("board");
+  const [activeTab, setActiveTab] = useState<"vault" | "roadmap" | "systems" | "admin">("vault");
+  const [activeTier, setActiveTier] = useState<"NOW" | "NEXT" | "LATER" | "DREAM">("NOW");
+  const [showFabModal, setShowFabModal] = useState(false);
   
-  // Vision Board State
   const [url, setUrl] = useState("");
   const [loading, setLoading] = useState(false);
   const [item, setItem] = useState<{ title: string; image_url: string; price: string; original_url: string } | null>(null);
   const [currency, setCurrency] = useState("EGP");
+  const [category, setCategory] = useState("Maintenance");
+  const [tier, setTier] = useState("NOW");
   const [goals, setGoals] = useState<Goal[]>([]);
   
-  // Payday Engine State
   const [incomeAmount, setIncomeAmount] = useState("");
   const [paydayResult, setPaydayResult] = useState<{ debt_cleared_this_week: number; unlocked_rebuild_funds: number; remaining_debt_balance: number } | null>(null);
 
-  // Settings State
   const [activeDebt, setActiveDebt] = useState<Debt | null>(null);
   const [debtName, setDebtName] = useState("");
   const [debtTarget, setDebtTarget] = useState("");
@@ -41,62 +44,47 @@ export default function Home() {
 
   const API_URL = "https://reyvelour-life-transformer-api.hf.space";
 
-  const fetchGoals = async () => {
+  const fetchData = async () => {
     try {
-      const response = await fetch(`${API_URL}/goals`);
-      if (response.ok) setGoals(await response.json());
-    } catch (error) {
-      console.error("Failed to fetch goals:", error);
-    }
+      const [goalsRes, debtRes] = await Promise.all([
+        fetch(`${API_URL}/goals`),
+        fetch(`${API_URL}/debts/active`)
+      ]);
+      if (goalsRes.ok) setGoals(await goalsRes.json());
+      if (debtRes.ok) setActiveDebt(await debtRes.json());
+    } catch (error) { console.error("Fetch failed", error); }
   };
 
-  const fetchActiveDebt = async () => {
-    try {
-      const response = await fetch(`${API_URL}/debts/active`);
-      if (response.ok) {
-        const data = await response.json();
-        setActiveDebt(data);
-      }
-    } catch (error) {
-      console.error("Failed to fetch active debt:", error);
-    }
-  };
+  useEffect(() => { fetchData(); }, []);
 
-  useEffect(() => {
-    fetchGoals();
-    fetchActiveDebt();
-  }, []);
-
-  // --- HANDLERS: PAYDAY & GOALS ---
   const handleLogIncome = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!incomeAmount) return;
     try {
-      const response = await fetch(`${API_URL}/income/log`, {
+      const res = await fetch(`${API_URL}/income/log`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ amount: parseInt(incomeAmount) }),
       });
-      if (response.ok) {
-        setPaydayResult(await response.json());
+      if (res.ok) {
+        setPaydayResult(await res.json());
         setIncomeAmount("");
-        fetchActiveDebt(); // Refresh debt progress
+        fetchData();
       }
     } catch (error) {}
   };
 
   const handleExtract = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!url) return;
     setLoading(true);
     try {
-      const response = await fetch(`${API_URL}/extract`, {
+      const res = await fetch(`${API_URL}/extract`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ url }),
       });
-      if (response.ok) {
-        setItem(await response.json());
+      if (res.ok) {
+        setItem(await res.json());
         setUrl("");
       }
     } catch (error) {}
@@ -106,274 +94,267 @@ export default function Home() {
   const handleSaveGoal = async () => {
     if (!item) return;
     try {
-      const response = await fetch(`${API_URL}/goals`, {
+      const res = await fetch(`${API_URL}/goals`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ ...item, currency }),
+        body: JSON.stringify({ ...item, currency, category, tier }),
       });
-      if (response.ok) {
-        setItem(null); 
-        fetchGoals(); 
+      if (res.ok) {
+        setItem(null);
+        setShowFabModal(false);
+        fetchData();
       }
     } catch (error) {}
   };
 
   const handleFundGoal = async (id: number, amount: number) => {
     try {
-      const response = await fetch(`${API_URL}/goals/${id}/fund`, {
+      const res = await fetch(`${API_URL}/goals/${id}/fund`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ amount }),
       });
-      if (response.ok) fetchGoals();
+      if (res.ok) fetchData();
     } catch (error) {}
   };
 
-  // --- HANDLERS: SETTINGS ---
   const handleCreateDebt = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!debtName || !debtTarget || !debtDeadline) return;
-    
     try {
-      const response = await fetch(`${API_URL}/debts`, {
+      const res = await fetch(`${API_URL}/debts`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ 
-          name: debtName, 
-          target_amount: parseInt(debtTarget), 
-          deadline: debtDeadline 
-        }),
+        body: JSON.stringify({ name: debtName, target_amount: parseInt(debtTarget), deadline: debtDeadline }),
       });
-      if (response.ok) {
-        setDebtName("");
-        setDebtTarget("");
-        setDebtDeadline("");
-        fetchActiveDebt();
+      if (res.ok) {
+        setDebtName(""); setDebtTarget(""); setDebtDeadline("");
+        fetchData();
       }
     } catch (error) {}
   };
 
-  return (
-    <main className="min-h-screen bg-neutral-950 text-white font-sans flex flex-col items-center">
-      
-      {/* NAVIGATION BAR */}
-      <nav className="w-full bg-neutral-900 border-b border-neutral-800 px-8 py-4 flex justify-center gap-8 sticky top-0 z-50">
-        <button 
-          onClick={() => setActiveTab("board")}
-          className={`font-bold transition-colors ${activeTab === "board" ? "text-green-400" : "text-neutral-500 hover:text-white"}`}
-        >
-          Vision Board
-        </button>
-        <button 
-          onClick={() => setActiveTab("settings")}
-          className={`font-bold transition-colors ${activeTab === "settings" ? "text-green-400" : "text-neutral-500 hover:text-white"}`}
-        >
-          Settings
-        </button>
-      </nav>
+  const filteredGoals = goals.filter(g => g.tier === activeTier);
 
-      <div className="w-full max-w-5xl p-8 flex flex-col items-center">
+  return (
+    <main className="min-h-screen bg-black text-white font-sans pb-24">
+      
+      {/* HEADER */}
+      <header className="bg-neutral-900 border-b border-neutral-800 p-6 sticky top-0 z-40">
+        <h1 className="text-2xl font-bold tracking-tight capitalize">{activeTab}</h1>
+      </header>
+
+      <div className="p-6 w-full max-w-3xl mx-auto">
         
-        {/* ===================== VISION BOARD TAB ===================== */}
-        {activeTab === "board" && (
-          <>
-            {/* 1. THE PAYDAY TOLL BOOTH */}
-            <div className="w-full max-w-2xl mb-12 bg-neutral-900 border border-neutral-800 rounded-2xl p-6 shadow-2xl">
-              <h2 className="text-xl font-bold mb-4">Monday Payday Engine</h2>
-              <form onSubmit={handleLogIncome} className="flex gap-2 mb-6">
+        {/* ===================== VAULT ===================== */}
+        {activeTab === "vault" && (
+          <div className="animate-in fade-in duration-300">
+            <div className="bg-neutral-900 rounded-3xl p-6 shadow-2xl mb-8 border border-neutral-800">
+              <h2 className="text-sm font-semibold text-neutral-400 uppercase tracking-widest mb-6">Financial Command</h2>
+              <form onSubmit={handleLogIncome} className="flex flex-col gap-4 mb-6">
                 <input
                   type="number"
                   value={incomeAmount}
                   onChange={(e) => setIncomeAmount(e.target.value)}
-                  placeholder="Total Expected Income..."
-                  className="flex-1 bg-neutral-950 border border-neutral-800 rounded-xl px-4 py-3 focus:outline-none focus:border-neutral-500"
+                  placeholder="Enter Wednesday Payout..."
+                  className="w-full bg-black border border-neutral-800 rounded-xl px-5 py-4 text-lg focus:outline-none focus:border-green-500"
                   required
                 />
-                <button type="submit" className="bg-green-500 text-black px-6 py-3 rounded-xl font-bold hover:bg-green-400 transition-colors">
-                  Route Funds
+                <button type="submit" className="w-full bg-green-500 text-black py-4 rounded-xl font-bold text-lg">
+                  Execute Split
                 </button>
               </form>
 
               {paydayResult && (
-                <div className="bg-neutral-950 rounded-xl p-4 border border-neutral-800 animate-in fade-in duration-500">
-                  <div className="flex justify-between items-center mb-2">
-                    <span className="text-neutral-400">Debt Cleared This Week:</span>
-                    <span className="text-red-400 font-bold">-{paydayResult.debt_cleared_this_week}</span>
+                <div className="bg-black rounded-2xl p-5 border border-neutral-800">
+                  <div className="flex justify-between items-center mb-3">
+                    <span className="text-neutral-400">Debt Cleared</span>
+                    <span className="text-red-400 font-bold text-lg">-{paydayResult.debt_cleared_this_week}</span>
                   </div>
-                  <div className="flex justify-between items-center mb-4 text-sm">
-                    <span className="text-neutral-500">Remaining Debt Balance:</span>
-                    <span className="text-neutral-500">{paydayResult.remaining_debt_balance}</span>
-                  </div>
-                  <div className="h-px w-full bg-neutral-800 mb-4"></div>
+                  <div className="h-px w-full bg-neutral-800 mb-3"></div>
                   <div className="flex justify-between items-center">
-                    <span className="text-neutral-200 font-semibold">Unlocked Rebuild Pool:</span>
-                    <span className="text-green-400 font-bold text-2xl">+{paydayResult.unlocked_rebuild_funds}</span>
+                    <span className="text-neutral-200 font-semibold">Available Rebuild Pool</span>
+                    <span className="text-green-400 font-black text-3xl">+{paydayResult.unlocked_rebuild_funds}</span>
                   </div>
                 </div>
               )}
-            </div>
-
-            {/* 2. THE VISION BOARD INTAKE */}
-            <div className="w-full max-w-2xl mb-16 text-center">
-              <h1 className="text-3xl font-bold mb-2">The Blueprint</h1>
-              <p className="text-neutral-400 mb-8">Fund your transformation. Paste a link below.</p>
-
-              <form onSubmit={handleExtract} className="flex gap-2 w-full max-w-md mx-auto mb-8">
-                <input
-                  type="url"
-                  value={url}
-                  onChange={(e) => setUrl(e.target.value)}
-                  placeholder="https://..."
-                  className="flex-1 bg-neutral-900 border border-neutral-800 rounded-xl px-4 py-3 focus:outline-none"
-                  required
-                />
-                <button type="submit" disabled={loading} className="bg-white text-black px-6 py-3 rounded-xl font-medium">
-                  {loading ? "..." : "Add"}
-                </button>
-              </form>
-
-              {item && (
-                <div className="bg-neutral-900 border border-neutral-800 rounded-2xl overflow-hidden shadow-2xl max-w-md mx-auto text-left">
-                  {item.image_url && (
-                    <div className="h-48 w-full bg-neutral-800 relative">
-                      <img src={item.image_url} alt={item.title} className="absolute inset-0 w-full h-full object-cover" />
-                    </div>
-                  )}
-                  <div className="p-5">
-                    <input 
-                      type="text"
-                      value={item.title}
-                      onChange={(e) => setItem({ ...item, title: e.target.value })}
-                      className="w-full bg-transparent border-b border-neutral-700 pb-1 mt-1 text-lg font-semibold text-white focus:outline-none"
-                    />
-                    <div className="flex justify-between items-end mt-4 mb-4">
-                      <select 
-                        value={currency} 
-                        onChange={(e) => setCurrency(e.target.value)}
-                        className="bg-neutral-800 text-white text-sm rounded-lg px-2 py-1 focus:outline-none border border-neutral-700"
-                      >
-                        <option value="EGP">EGP (E£)</option>
-                        <option value="USD">USD ($)</option>
-                      </select>
-                      <span className="text-xl font-bold text-green-400">{item.price}</span>
-                    </div>
-                    <button onClick={handleSaveGoal} className="w-full bg-white text-black py-2 rounded-xl font-bold">Lock Goal</button>
-                  </div>
-                </div>
-              )}
-            </div>
-
-            {/* 3. ACTIVE GOALS GRID */}
-            <div className="w-full max-w-5xl">
-              <h2 className="text-xl font-bold border-b border-neutral-800 pb-2 mb-6">Active Goals</h2>
-              <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-6">
-                {goals.map((goal) => {
-                  const targetPrice = parseFloat(goal.price.replace(/[^0-9.-]+/g,"")) || 1; 
-                  const progressPercent = Math.min((goal.funded_amount / targetPrice) * 100, 100);
-
-                  return (
-                    <div key={goal.id} className="group bg-neutral-900 rounded-2xl overflow-hidden hover:ring-2 hover:ring-neutral-700 transition-all flex flex-col">
-                      <a href={goal.original_url} target="_blank" rel="noopener noreferrer" className="h-48 w-full bg-neutral-800 relative overflow-hidden block">
-                        <img src={goal.image_url} alt={goal.title} className="absolute inset-0 w-full h-full object-cover group-hover:scale-105 transition-transform duration-500" />
-                      </a>
-                      <div className="p-4 flex flex-col flex-1 justify-between">
-                        <h3 className="font-semibold text-sm line-clamp-2 mb-4 text-neutral-200">{goal.title}</h3>
-                        <div>
-                          <div className="flex justify-between text-xs mb-2">
-                            <span className="text-neutral-400">{goal.currency === "EGP" ? "E£" : "$"}{goal.funded_amount} saved</span>
-                            <span className="font-bold text-white">{goal.price}</span>
-                          </div>
-                          <div className="h-2 w-full bg-neutral-800 rounded-full overflow-hidden mb-4">
-                            <div className="h-full bg-green-500 transition-all duration-1000 ease-out" style={{ width: `${progressPercent}%` }}></div>
-                          </div>
-                          <div className="grid grid-cols-2 gap-2">
-                            <button onClick={() => handleFundGoal(goal.id, 50)} className="bg-neutral-800 hover:bg-neutral-700 text-white text-xs font-bold py-2 rounded-lg">
-                              + 50
-                            </button>
-                            <button onClick={() => handleFundGoal(goal.id, 200)} className="bg-neutral-800 hover:bg-neutral-700 text-white text-xs font-bold py-2 rounded-lg">
-                              + 200
-                            </button>
-                          </div>
-                        </div>
-                      </div>
-                    </div>
-                  );
-                })}
-              </div>
-            </div>
-          </>
-        )}
-
-        {/* ===================== SETTINGS TAB ===================== */}
-        {activeTab === "settings" && (
-          <div className="w-full max-w-xl animate-in fade-in duration-300">
-            <h1 className="text-3xl font-bold mb-8">System Settings</h1>
-            
-            {/* Current Active Debt Card */}
-            <div className="bg-neutral-900 border border-neutral-800 rounded-2xl p-6 mb-8">
-              <h2 className="text-lg font-semibold text-neutral-400 mb-4 uppercase tracking-wider">Active Debt Objective</h2>
-              {activeDebt ? (
-                <div>
-                  <div className="flex justify-between items-end mb-2">
-                    <span className="text-2xl font-bold text-white">{activeDebt.name}</span>
-                    <span className="text-red-400 font-bold">{activeDebt.amount_paid} / {activeDebt.target_amount}</span>
-                  </div>
-                  <p className="text-sm text-neutral-500 mb-4">Target Clearance: {activeDebt.deadline}</p>
-                  <div className="h-2 w-full bg-neutral-800 rounded-full overflow-hidden">
-                    <div 
-                      className="h-full bg-red-500 transition-all duration-1000" 
-                      style={{ width: `${Math.min((activeDebt.amount_paid / activeDebt.target_amount) * 100, 100)}%` }}
-                    ></div>
-                  </div>
-                </div>
-              ) : (
-                <p className="text-neutral-500 italic">No active debt obligations.</p>
-              )}
-            </div>
-
-            {/* New Debt Form */}
-            <div className="bg-neutral-900 border border-neutral-800 rounded-2xl p-6">
-              <h2 className="text-xl font-bold mb-6">Log New Liability</h2>
-              <form onSubmit={handleCreateDebt} className="flex flex-col gap-4">
-                <div>
-                  <label className="block text-sm text-neutral-400 mb-1">Objective Name (e.g. October Clearance)</label>
-                  <input
-                    type="text"
-                    value={debtName}
-                    onChange={(e) => setDebtName(e.target.value)}
-                    className="w-full bg-neutral-950 border border-neutral-800 rounded-xl px-4 py-3 focus:outline-none focus:border-neutral-500"
-                    required
-                  />
-                </div>
-                <div>
-                  <label className="block text-sm text-neutral-400 mb-1">Total Target Amount</label>
-                  <input
-                    type="number"
-                    value={debtTarget}
-                    onChange={(e) => setDebtTarget(e.target.value)}
-                    className="w-full bg-neutral-950 border border-neutral-800 rounded-xl px-4 py-3 focus:outline-none focus:border-neutral-500"
-                    required
-                  />
-                </div>
-                <div>
-                  <label className="block text-sm text-neutral-400 mb-1">Target Deadline</label>
-                  <input
-                    type="date"
-                    value={debtDeadline}
-                    onChange={(e) => setDebtDeadline(e.target.value)}
-                    className="w-full bg-neutral-950 border border-neutral-800 rounded-xl px-4 py-3 focus:outline-none focus:border-neutral-500 text-white"
-                    required
-                  />
-                </div>
-                <button type="submit" className="w-full bg-red-500 hover:bg-red-400 text-white font-bold py-3 rounded-xl mt-2 transition-colors">
-                  Initialize Goal
-                </button>
-              </form>
             </div>
           </div>
         )}
 
+        {/* ===================== ROADMAP ===================== */}
+        {activeTab === "roadmap" && (
+          <div className="animate-in fade-in duration-300">
+            <div className="flex bg-neutral-900 rounded-xl p-1 mb-6">
+              {["NOW", "NEXT", "LATER", "DREAM"].map((t) => (
+                <button 
+                  key={t} onClick={() => setActiveTier(t as any)}
+                  className={`flex-1 text-xs font-bold py-2 rounded-lg transition-all ${activeTier === t ? "bg-neutral-700 text-white" : "text-neutral-500"}`}
+                >
+                  {t}
+                </button>
+              ))}
+            </div>
+
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
+              {filteredGoals.map((goal) => {
+                const targetPrice = parseFloat(goal.price.replace(/[^0-9.-]+/g,"")) || 1; 
+                const progressPercent = Math.min((goal.funded_amount / targetPrice) * 100, 100);
+
+                return (
+                  <div key={goal.id} className="bg-neutral-900 border border-neutral-800 rounded-3xl overflow-hidden flex flex-col">
+                    <a href={goal.original_url} target="_blank" rel="noopener noreferrer" className="h-48 w-full bg-neutral-800 relative block">
+                      <img src={goal.image_url} className="absolute inset-0 w-full h-full object-cover opacity-90 hover:opacity-100 transition-opacity" />
+                    </a>
+                    <div className="p-5 flex flex-col flex-1">
+                      <span className="text-xs font-bold text-green-500 mb-2 uppercase">{goal.category}</span>
+                      <h3 className="font-semibold text-sm line-clamp-2 mb-4 text-white">{goal.title}</h3>
+                      <div className="mt-auto">
+                        <div className="flex justify-between text-xs mb-2">
+                          <span className="text-neutral-400">{goal.currency === "EGP" ? "E£" : "$"}{goal.funded_amount}</span>
+                          <span className="font-bold text-white">{goal.price}</span>
+                        </div>
+                        <div className="h-2 w-full bg-black rounded-full overflow-hidden mb-4">
+                          <div className="h-full bg-green-500 transition-all" style={{ width: `${progressPercent}%` }}></div>
+                        </div>
+                        <div className="grid grid-cols-2 gap-2">
+                          <button onClick={() => handleFundGoal(goal.id, 50)} className="bg-neutral-800 text-white text-xs font-bold py-3 rounded-xl">+ 50</button>
+                          <button onClick={() => handleFundGoal(goal.id, 200)} className="bg-neutral-800 text-white text-xs font-bold py-3 rounded-xl">+ 200</button>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        )}
+
+        {/* ===================== SYSTEMS ===================== */}
+        {activeTab === "systems" && (
+          <div className="animate-in fade-in duration-300">
+            <h2 className="text-xl font-bold mb-4">Phase 1 Execution</h2>
+            <div className="bg-neutral-900 rounded-3xl p-6 border border-neutral-800 mb-4">
+              <h3 className="text-green-400 font-bold mb-2">Morning Protocol</h3>
+              <ul className="text-sm text-neutral-300 space-y-2">
+                <li className="flex items-center gap-2"><div className="w-2 h-2 bg-neutral-600 rounded-full"></div>Cleanser &rarr; Moisturizer &rarr; Sunscreen</li>
+                <li className="flex items-center gap-2"><div className="w-2 h-2 bg-neutral-600 rounded-full"></div>Gym / Hypertrophy Split</li>
+              </ul>
+            </div>
+            <div className="bg-neutral-900 rounded-3xl p-6 border border-neutral-800">
+              <h3 className="text-blue-400 font-bold mb-2">Sunday Reset</h3>
+              <ul className="text-sm text-neutral-300 space-y-2">
+                <li className="flex items-center gap-2"><div className="w-2 h-2 bg-neutral-600 rounded-full"></div>Clean Sheets & Desk Vacuum</li>
+                <li className="flex items-center gap-2"><div className="w-2 h-2 bg-neutral-600 rounded-full"></div>Nails, Beard Shape, Exfoliation</li>
+              </ul>
+            </div>
+          </div>
+        )}
+
+        {/* ===================== ADMIN ===================== */}
+        {activeTab === "admin" && (
+          <div className="animate-in fade-in duration-300">
+            <div className="bg-neutral-900 border border-neutral-800 rounded-3xl p-6 mb-6">
+              <h2 className="text-sm font-semibold text-neutral-400 uppercase tracking-widest mb-4">Active Liability</h2>
+              {activeDebt ? (
+                <div>
+                  <div className="flex justify-between items-end mb-2">
+                    <span className="text-xl font-bold text-white">{activeDebt.name}</span>
+                    <span className="text-red-400 font-bold">{activeDebt.amount_paid} / {activeDebt.target_amount}</span>
+                  </div>
+                  <div className="h-2 w-full bg-black rounded-full overflow-hidden">
+                    <div className="h-full bg-red-500" style={{ width: `${Math.min((activeDebt.amount_paid / activeDebt.target_amount) * 100, 100)}%` }}></div>
+                  </div>
+                </div>
+              ) : (
+                <p className="text-neutral-500 text-sm">No active debt tracking.</p>
+              )}
+            </div>
+
+            <div className="bg-neutral-900 border border-neutral-800 rounded-3xl p-6">
+              <h2 className="text-sm font-semibold text-neutral-400 uppercase tracking-widest mb-4">Initialize Debt</h2>
+              <form onSubmit={handleCreateDebt} className="flex flex-col gap-4">
+                <input type="text" value={debtName} onChange={(e) => setDebtName(e.target.value)} placeholder="Objective Name" className="bg-black border border-neutral-800 rounded-xl px-4 py-3" required />
+                <input type="number" value={debtTarget} onChange={(e) => setDebtTarget(e.target.value)} placeholder="Total Target Amount" className="bg-black border border-neutral-800 rounded-xl px-4 py-3" required />
+                <input type="date" value={debtDeadline} onChange={(e) => setDebtDeadline(e.target.value)} className="bg-black border border-neutral-800 rounded-xl px-4 py-3 text-white" required />
+                <button type="submit" className="bg-red-500 text-white font-bold py-3 rounded-xl mt-2">Set Liability</button>
+              </form>
+            </div>
+          </div>
+        )}
       </div>
+
+      {/* FAB MODAL FOR ADDING ITEMS */}
+      {showFabModal && (
+        <div className="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 flex items-end sm:items-center justify-center p-4">
+          <div className="bg-neutral-900 w-full max-w-md rounded-3xl p-6 border border-neutral-800 mb-20 sm:mb-0">
+            <div className="flex justify-between mb-4">
+              <h2 className="font-bold text-lg">Add to Blueprint</h2>
+              <button onClick={() => {setShowFabModal(false); setItem(null);}} className="text-neutral-500">Close</button>
+            </div>
+            
+            {!item ? (
+              <form onSubmit={handleExtract} className="flex gap-2">
+                <input type="url" value={url} onChange={(e) => setUrl(e.target.value)} placeholder="https://amazon..." className="flex-1 bg-black border border-neutral-800 rounded-xl px-4 py-3" required />
+                <button type="submit" disabled={loading} className="bg-white text-black px-6 py-3 rounded-xl font-medium">{loading ? "..." : "Pull"}</button>
+              </form>
+            ) : (
+              <div className="flex flex-col gap-4">
+                <input type="text" value={item.title} onChange={(e) => setItem({ ...item, title: e.target.value })} className="bg-black rounded-xl px-4 py-3" />
+                <div className="flex gap-2">
+                  <select value={tier} onChange={(e) => setTier(e.target.value)} className="flex-1 bg-black rounded-xl px-4 py-3 border border-neutral-800">
+                    <option value="NOW">NOW (Basics)</option>
+                    <option value="NEXT">NEXT (Room)</option>
+                    <option value="LATER">LATER (Wardrobe)</option>
+                    <option value="DREAM">DREAM (Laser/Procedures)</option>
+                  </select>
+                  <select value={category} onChange={(e) => setCategory(e.target.value)} className="flex-1 bg-black rounded-xl px-4 py-3 border border-neutral-800">
+                    <option value="Maintenance">Maintenance</option>
+                    <option value="Room">Room</option>
+                    <option value="Body">Body</option>
+                    <option value="Procedure">Procedure</option>
+                  </select>
+                </div>
+                <div className="flex gap-2">
+                  <select value={currency} onChange={(e) => setCurrency(e.target.value)} className="bg-black rounded-xl px-4 py-3 border border-neutral-800">
+                    <option value="EGP">EGP</option><option value="USD">USD</option>
+                  </select>
+                  <div className="flex-1 bg-black rounded-xl px-4 py-3 text-center text-green-400 font-bold">{item.price}</div>
+                </div>
+                <button onClick={handleSaveGoal} className="w-full bg-green-500 text-black py-4 rounded-xl font-bold mt-2">Lock into Roadmap</button>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* FLOATING ACTION BUTTON (FAB) */}
+      {activeTab === "roadmap" && (
+        <button 
+          onClick={() => setShowFabModal(true)}
+          className="fixed bottom-24 right-6 w-14 h-14 bg-white text-black rounded-full flex items-center justify-center shadow-lg text-2xl font-light hover:scale-105 transition-transform z-40"
+        >
+          +
+        </button>
+      )}
+
+      {/* BOTTOM NAVIGATION BAR */}
+      <nav className="fixed bottom-0 w-full bg-neutral-900 border-t border-neutral-800 flex justify-around pb-8 pt-4 px-2 z-40">
+        {[
+          { id: "vault", label: "Vault", icon: "⛑️" },
+          { id: "roadmap", label: "Roadmap", icon: "🗺️" },
+          { id: "systems", label: "Systems", icon: "⚙️" },
+          { id: "admin", label: "Admin", icon: "🏢" }
+        ].map((tab) => (
+          <button 
+            key={tab.id}
+            onClick={() => setActiveTab(tab.id as any)}
+            className={`flex flex-col items-center gap-1 transition-opacity ${activeTab === tab.id ? "opacity-100" : "opacity-40"}`}
+          >
+            <span className="text-xl">{tab.icon}</span>
+            <span className="text-[10px] font-semibold uppercase tracking-wider">{tab.label}</span>
+          </button>
+        ))}
+      </nav>
     </main>
   );
 }
