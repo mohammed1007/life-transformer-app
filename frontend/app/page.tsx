@@ -88,7 +88,10 @@ export default function Home() {
 
   const handleSaveGoal = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!titleInput || !priceInput) return;
+    if (!titleInput || !priceInput) {
+      alert("Please fill in both the Product Title and Price!");
+      return;
+    }
 
     try {
       const res = await fetch(`${API_URL}/goals`, {
@@ -104,6 +107,7 @@ export default function Home() {
           original_url: url || "#"
         }),
       });
+
       if (res.ok) { 
         setTitleInput(""); 
         setPriceInput(""); 
@@ -111,8 +115,13 @@ export default function Home() {
         setUrl("");
         setShowFabModal(false); 
         fetchData(); 
+      } else {
+        const errorData = await res.json();
+        alert(`Server error: ${JSON.stringify(errorData)}`);
       }
-    } catch (error) {}
+    } catch (error) {
+      alert(`Connection failed or image file is too large: ${error}`);
+    }
   };
 
   const handleFundGoal = async (id: number, amount: number) => {
