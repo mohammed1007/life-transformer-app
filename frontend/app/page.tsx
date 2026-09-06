@@ -7,10 +7,11 @@ interface Goal {
   title: string;
   price: string;
   currency: string;
-  category?: string; // Restored to fix the TS2353 error
+  category?: string;
   tier: "Inventory" | "Board" | "Dream";
   board?: "Room" | "Closet" | "Gym";
-  outfit?: string; 
+  outfit?: string; // Legacy support for your first closet items
+  subGroup?: string; // New universal sub-folder system
   stock_status: "IN_STOCK" | "LOW" | "OUT";
   image_url: string;
   original_url: string;
@@ -26,7 +27,7 @@ interface Debt {
 export default function Home() {
   const [activeTab, setActiveTab] = useState<"daily" | "inventory" | "boards" | "dreams" | "vault">("daily");
   const [activeBoard, setActiveBoard] = useState<"Room" | "Closet" | "Gym">("Room");
-  const [selectedOutfit, setSelectedOutfit] = useState<string | null>(null);
+  const [selectedSubGroup, setSelectedSubGroup] = useState<string | null>(null);
   
   // Modal State
   const [showFabModal, setShowFabModal] = useState(false);
@@ -41,7 +42,7 @@ export default function Home() {
   const [category, setCategory] = useState("Maintenance");
   const [tier, setTier] = useState<"Inventory" | "Board" | "Dream">("Inventory");
   const [boardInput, setBoardInput] = useState<"Room" | "Closet" | "Gym">("Room");
-  const [outfitInput, setOutfitInput] = useState("");
+  const [subGroupInput, setSubGroupInput] = useState("");
   
   // Local Data State
   const [goals, setGoals] = useState<Goal[]>([]);
@@ -140,7 +141,7 @@ export default function Home() {
       id: editingGoalId || Date.now(),
       title: titleInput, price: priceInput, currency, tier, category,
       board: tier === "Board" ? boardInput : undefined,
-      outfit: tier === "Board" && boardInput === "Closet" ? outfitInput || "General" : undefined,
+      subGroup: tier === "Board" ? (subGroupInput || "General") : undefined,
       stock_status: "IN_STOCK", 
       image_url: imageInput || "https://images.unsplash.com/photo-1584308666744-24d5c474f2ae?w=500&auto=format&fit=crop&q=60",
       original_url: url, 
@@ -174,13 +175,13 @@ export default function Home() {
     setEditingGoalId(goal.id); setTitleInput(goal.title); setPriceInput(goal.price);
     setImageInput(goal.image_url); setUrl(goal.original_url || ""); setCurrency(goal.currency);
     setCategory(goal.category || "Maintenance"); setTier(goal.tier); setBoardInput(goal.board || "Room"); 
-    setOutfitInput(goal.outfit || "");
+    setSubGroupInput(goal.subGroup || goal.outfit || "");
     setShowFabModal(true);
   };
 
   const closeModal = () => {
     setShowFabModal(false); setEditingGoalId(null);
-    setTitleInput(""); setPriceInput(""); setImageInput(""); setUrl(""); setOutfitInput("");
+    setTitleInput(""); setPriceInput(""); setImageInput(""); setUrl(""); setSubGroupInput("");
   };
 
   const handleCreateDebt = (e: React.FormEvent) => {
@@ -203,12 +204,12 @@ export default function Home() {
   const dreamItems = goals.filter(g => g.tier === "Dream");
   const boardItems = goals.filter(g => g.tier === "Board" && g.board === activeBoard);
   
-  // Closet Outfits Logic
-  const outfits = activeBoard === "Closet" ? Array.from(new Set(boardItems.map(g => g.outfit || "General"))) : [];
-  const activeOutfitItems = boardItems.filter(g => (g.outfit || "General") === selectedOutfit);
+  // Universal Sub-Group Logic (Handles Room, Closet, and Gym)
+  const subGroups = Array.from(new Set(boardItems.map(g => g.subGroup || g.outfit || "General")));
+  const activeSubGroupItems = boardItems.filter(g => (g.subGroup || g.outfit || "General") === selectedSubGroup);
   
   // Current view logic
-  const currentViewItems = selectedOutfit ? activeOutfitItems : boardItems;
+  const currentViewItems = selectedSubGroup ? activeSubGroupItems : [];
 
   const restockCost = inventoryItems.filter(g => g.stock_status !== "IN_STOCK").reduce((sum: number, g: Goal) => sum + parsePrice(g.price), 0);
 
@@ -294,38 +295,37 @@ export default function Home() {
           <div className="animate-in fade-in">
             <div className="flex gap-2 overflow-x-auto hide-scrollbar pb-4 mb-4 snap-x">
               {(["Room", "Closet", "Gym"] as const).map((b) => (
-                <button key={b} onClick={() => { setActiveBoard(b); setSelectedOutfit(null); }} className={`snap-center shrink-0 px-5 py-2.5 rounded-[1.25rem] text-xs font-bold tracking-wide transition-all border ${activeBoard === b ? 'bg-green-500 border-green-400 text-black shadow-lg' : 'bg-white/5 border-white/10 text-white/60 hover:bg-white/10'}`}>
+                <button key={b} onClick={() => { setActiveBoard(b); setSelectedSubGroup(null); }} className={`snap-center shrink-0 px-5 py-2.5 rounded-[1.25rem] text-xs font-bold tracking-wide transition-all border ${activeBoard === b ? 'bg-green-500 border-green-400 text-black shadow-lg' : 'bg-white/5 border-white/10 text-white/60 hover:bg-white/10'}`}>
                   {b}
                 </button>
               ))}
             </div>
 
-            {activeBoard === "Closet" && !selectedOutfit && (
+            {/* Sub-Group Grid View (Outfits / Sections) */}
+            {!selectedSubGroup ? (
               <div className="grid grid-cols-2 gap-4">
-                {outfits.map(outfit => (
-                  <button key={outfit} onClick={() => setSelectedOutfit(outfit)} className="bg-white/5 border border-white/10 hover:border-green-500/50 rounded-3xl p-6 text-left transition-all aspect-square flex flex-col justify-end shadow-lg">
-                    <h3 className="font-bold text-lg text-white">{outfit}</h3>
-                    <p className="text-white/40 text-xs mt-1">{boardItems.filter(g => (g.outfit || "General") === outfit).length} items</p>
+                {subGroups.map(group => (
+                  <button key={group} onClick={() => setSelectedSubGroup(group)} className="bg-white/5 border border-white/10 hover:border-green-500/50 rounded-3xl p-6 text-left transition-all aspect-square flex flex-col justify-end shadow-lg">
+                    <h3 className="font-bold text-lg text-white">{group}</h3>
+                    <p className="text-white/40 text-xs mt-1">{boardItems.filter(g => (g.subGroup || g.outfit || "General") === group).length} items</p>
                   </button>
                 ))}
-                {outfits.length === 0 && <p className="text-white/40 text-sm col-span-2">No outfits built yet.</p>}
+                {subGroups.length === 0 && <p className="text-white/40 text-sm col-span-2">No projects built here yet.</p>}
               </div>
-            )}
-
-            {(activeBoard !== "Closet" || selectedOutfit) && (
+            ) : (
+              
+              /* Specific Sub-Group View */
               <div className="space-y-6">
-                {selectedOutfit && (
-                  <button onClick={() => setSelectedOutfit(null)} className="flex items-center gap-2 text-green-400 font-bold text-sm mb-4">
-                    <ChevronLeft size={16} /> Back to Outfits
-                  </button>
-                )}
+                <button onClick={() => setSelectedSubGroup(null)} className="flex items-center gap-2 text-green-400 font-bold text-sm mb-4">
+                  <ChevronLeft size={16} /> Back to {activeBoard}
+                </button>
                 
                 {/* Global Phase Progress */}
                 {currentViewItems.length > 0 && (
                   <div className="bg-white/5 border border-white/10 rounded-3xl p-5 mb-2 shadow-lg">
                     <div className="flex justify-between items-end mb-3">
                       <div>
-                        <h3 className="text-white font-bold text-sm uppercase tracking-widest">{selectedOutfit || activeBoard} Budget</h3>
+                        <h3 className="text-white font-bold text-sm uppercase tracking-widest">{selectedSubGroup} Budget</h3>
                         <p className="text-white/50 text-xs mt-1">Total capital required</p>
                       </div>
                       <div className="text-right">
@@ -408,7 +408,6 @@ export default function Home() {
         {activeTab === "vault" && (
           <div className="animate-in fade-in space-y-6">
             
-            {/* Payday Engine */}
             <div className="bg-white/5 border border-white/10 rounded-3xl p-6 shadow-lg">
               <h2 className="text-[10px] font-bold text-white/50 uppercase tracking-widest mb-4">Monday Split Engine</h2>
               <form onSubmit={handleLogIncome} className="flex flex-col gap-4">
@@ -420,7 +419,6 @@ export default function Home() {
               </form>
             </div>
 
-            {/* Total Pool */}
             <div className="bg-green-500/10 border border-green-500/30 rounded-3xl p-6 flex justify-between items-center">
               <div>
                 <h3 className="text-green-400 font-bold text-sm">Total Rebuild Pool</h3>
@@ -429,7 +427,6 @@ export default function Home() {
               <span className="text-3xl font-black text-green-400">E£{rebuildPool}</span>
             </div>
 
-            {/* Debt Target */}
             <div className="bg-white/5 border border-white/10 rounded-3xl p-6 shadow-lg">
               <h2 className="text-[10px] font-bold text-white/50 uppercase tracking-widest mb-4">Liability Target</h2>
               {activeDebt ? (
@@ -449,7 +446,6 @@ export default function Home() {
               )}
             </div>
 
-            {/* Global DB Manager */}
             <div className="bg-white/5 border border-white/10 rounded-3xl p-6 shadow-lg">
               <h2 className="text-[10px] font-bold text-white/50 uppercase tracking-widest mb-4">Global Database</h2>
               <div className="space-y-3">
@@ -518,12 +514,12 @@ export default function Home() {
                     <option value="Gym">Gym</option>
                   </select>
                 </div>
-                {boardInput === "Closet" && (
-                  <div className="flex-1 bg-white/5 rounded-2xl p-4 border border-white/10">
-                    <label className="block text-[10px] text-white/50 font-bold mb-1 uppercase tracking-wider">Outfit Group</label>
-                    <input type="text" value={outfitInput} onChange={(e) => setOutfitInput(e.target.value)} placeholder="e.g. Techwear" className="w-full bg-transparent text-white font-bold outline-none" />
-                  </div>
-                )}
+                <div className="flex-1 bg-white/5 rounded-2xl p-4 border border-white/10">
+                  <label className="block text-[10px] text-white/50 font-bold mb-1 uppercase tracking-wider">
+                    {boardInput === 'Closet' ? 'Outfit Name' : boardInput === 'Room' ? 'Room Section' : 'Category'}
+                  </label>
+                  <input type="text" value={subGroupInput} onChange={(e) => setSubGroupInput(e.target.value)} placeholder={boardInput === 'Closet' ? 'e.g. Techwear' : boardInput === 'Room' ? 'e.g. Furniture' : 'e.g. Supplements'} className="w-full bg-transparent text-white font-bold outline-none" />
+                </div>
               </div>
             )}
 
@@ -562,7 +558,7 @@ export default function Home() {
       {/* BOTTOM NAV */}
       <div className="fixed bottom-6 left-4 right-4 z-50">
         <div className="bg-[#1c1c1e]/80 backdrop-blur-2xl border border-white/10 rounded-[2.5rem] px-4 py-2.5 flex justify-between items-center shadow-[0_20px_40px_rgba(0,0,0,0.6)]">
-          {navItems.map((item) => (
+          {[{ id: 'daily', icon: CheckCircle2, label: 'Daily' }, { id: 'inventory', icon: Package, label: 'Inventory' }, { id: 'boards', icon: LayoutGrid, label: 'Boards' }, { id: 'dreams', icon: Sparkles, label: 'Dreams' }, { id: 'vault', icon: Wallet, label: 'Vault' }].map((item) => (
             <button key={item.id} onClick={() => setActiveTab(item.id as any)} className={`flex flex-col items-center justify-center flex-1 gap-1 transition-all duration-300 ${activeTab === item.id ? 'text-white scale-105' : 'text-white/40 hover:text-white/60'}`}>
               <item.icon size={22} strokeWidth={2.5} className={activeTab === item.id ? "text-green-400" : ""} />
               <span className="text-[9px] font-bold tracking-wide mt-0.5 uppercase">{item.label}</span>
