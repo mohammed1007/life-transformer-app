@@ -8,15 +8,15 @@ interface Goal {
   price: string;
   currency: string;
   category?: string;
-  tier: "Inventory" | "Board" | "Dream";
+  tier: "Inventory" | "One-Off" | "Board" | "Dream";
   board?: "Room" | "Closet" | "Gym";
   outfit?: string; 
   subGroup?: string; 
   stock_status: "IN_STOCK" | "LOW" | "OUT";
   image_url: string;
   original_url: string;
-  funded_amount: number; // Kept for Dreams
-  quantity?: number; // New Quantity multiplier
+  funded_amount: number; 
+  quantity?: number; 
 }
 
 interface Debt {
@@ -42,7 +42,7 @@ export default function Home() {
   const [imageInput, setImageInput] = useState(""); 
   const [currency, setCurrency] = useState("EGP");
   const [category, setCategory] = useState("Maintenance");
-  const [tier, setTier] = useState<"Inventory" | "Board" | "Dream">("Inventory");
+  const [tier, setTier] = useState<"Inventory" | "One-Off" | "Board" | "Dream">("Inventory");
   const [boardInput, setBoardInput] = useState<"Room" | "Closet" | "Gym">("Room");
   const [subGroupInput, setSubGroupInput] = useState("");
   
@@ -51,7 +51,7 @@ export default function Home() {
   const [activeDebt, setActiveDebt] = useState<Debt | null>(null);
   const [incomeAmount, setIncomeAmount] = useState("");
   const [rebuildPool, setRebuildPool] = useState<number>(0);
-  const [projectFunds, setProjectFunds] = useState<Record<string, number>>({}); // Project-level funding
+  const [projectFunds, setProjectFunds] = useState<Record<string, number>>({}); 
 
   // Debt Form State
   const [debtNameInput, setDebtNameInput] = useState("");
@@ -183,6 +183,11 @@ export default function Home() {
     if (confirm("Permanently delete this item?")) saveGoalsToLocal(goals.filter(g => g.id !== id));
   };
 
+  const handleMarkBought = (id: number) => {
+    // Instantly removes a one-off item without a confirmation prompt
+    saveGoalsToLocal(goals.filter(g => g.id !== id));
+  };
+
   const openEditModal = (goal: Goal) => {
     setEditingGoalId(goal.id); setTitleInput(goal.title); setPriceInput(goal.price); setQuantityInput((goal.quantity || 1).toString());
     setImageInput(goal.image_url); setUrl(goal.original_url || ""); setCurrency(goal.currency);
@@ -213,6 +218,7 @@ export default function Home() {
   const parsePrice = (priceStr: string) => parseFloat(priceStr.replace(/[^0-9.-]+/g,"")) || 0;
   
   const inventoryItems = goals.filter(g => g.tier === "Inventory");
+  const oneOffItems = goals.filter(g => g.tier === "One-Off");
   const dreamItems = goals.filter(g => g.tier === "Dream");
   const boardItems = goals.filter(g => g.tier === "Board" && g.board === activeBoard);
   
@@ -259,8 +265,11 @@ export default function Home() {
         {/* ===================== INVENTORY ===================== */}
         {activeTab === "inventory" && (
           <div className="animate-in fade-in space-y-4">
+            
+            {/* Recurring Essentials */}
+            <h2 className="text-[10px] font-bold text-white/50 uppercase tracking-widest mt-2 pl-1">Restockables</h2>
             {restockCost > 0 && (
-              <div className="bg-amber-500/10 border border-amber-500/30 rounded-3xl p-5 mb-2 flex items-center justify-between">
+              <div className="bg-amber-500/10 border border-amber-500/30 rounded-3xl p-5 flex items-center justify-between">
                 <div className="flex items-center gap-3">
                   <ShoppingCart className="text-amber-400" size={24} />
                   <div>
@@ -291,6 +300,30 @@ export default function Home() {
                 </button>
               </div>
             ))}
+            {inventoryItems.length === 0 && <p className="text-white/40 text-sm pl-1">No restockables set.</p>}
+
+            {/* One-Off Purchases */}
+            <h2 className="text-[10px] font-bold text-white/50 uppercase tracking-widest pt-4 pl-1 border-t border-white/10 mt-6">One-Off Needs</h2>
+            {oneOffItems.map((goal) => (
+              <div key={goal.id} className="bg-white/5 border border-white/10 rounded-3xl p-4 flex items-center gap-4 shadow-lg">
+                <div className="w-16 h-16 rounded-2xl bg-black/40 overflow-hidden shrink-0 relative">
+                  <img src={goal.image_url} className="w-full h-full object-cover opacity-80" />
+                  {goal.quantity && goal.quantity > 1 && <span className="absolute bottom-1 right-1 bg-black/80 text-[10px] font-bold px-1.5 py-0.5 rounded-md border border-white/20">x{goal.quantity}</span>}
+                </div>
+                <div className="flex-1">
+                  <div className="flex items-center gap-2 mb-1">
+                    <h3 className="font-bold text-sm text-white line-clamp-1">{goal.title}</h3>
+                    {goal.original_url && goal.original_url !== "#" && <a href={goal.original_url} target="_blank" rel="noopener noreferrer" className="text-white/40 hover:text-green-400"><ExternalLink size={14} /></a>}
+                  </div>
+                  <span className="text-white/50 text-xs font-bold">{goal.price} {goal.currency} {goal.quantity && goal.quantity > 1 && `(x${goal.quantity})`}</span>
+                </div>
+                <button onClick={() => handleMarkBought(goal.id)} className="p-3 rounded-2xl flex flex-col items-center justify-center gap-1 w-20 shrink-0 transition-all border bg-green-500/20 border-green-500/30 text-green-400 hover:bg-green-500/30">
+                  <CheckCircle2 size={18} />
+                  <span className="text-[9px] font-bold tracking-widest uppercase">BOUGHT</span>
+                </button>
+              </div>
+            ))}
+            {oneOffItems.length === 0 && <p className="text-white/40 text-sm pl-1">No pending one-off items.</p>}
           </div>
         )}
 
@@ -501,6 +534,7 @@ export default function Home() {
                 <label className="block text-[10px] text-white/50 font-bold mb-1 uppercase tracking-wider">Classification</label>
                 <select value={tier} onChange={(e) => setTier(e.target.value as any)} className="w-full bg-transparent text-white font-bold outline-none appearance-none">
                   <option value="Inventory">Inventory (Restockables)</option>
+                  <option value="One-Off">One-Off (Buy Once)</option>
                   <option value="Board">Vision Board</option>
                   <option value="Dream">Dream (High-Ticket)</option>
                 </select>
