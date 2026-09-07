@@ -1,6 +1,6 @@
 "use client";
 import { useState, useEffect } from "react";
-import { Wallet, Sparkles, Package, AlertTriangle, XCircle, ShoppingCart, Image as ImageIcon, ExternalLink, Trash2, Edit2, LayoutGrid, CheckCircle2, ChevronLeft, Plus, X } from 'lucide-react';
+import { Wallet, Sparkles, Package, AlertTriangle, XCircle, ShoppingCart, Image as ImageIcon, ExternalLink, Trash2, Edit2, LayoutGrid, CheckCircle2, ChevronLeft, Plus, X, Save } from 'lucide-react';
 
 interface Goal {
   id: number;
@@ -23,6 +23,7 @@ interface Debt {
   name: string;
   target_amount: number;
   amount_paid: number;
+  deadline: string;
 }
 
 export default function Home() {
@@ -53,9 +54,14 @@ export default function Home() {
   const [rebuildPool, setRebuildPool] = useState<number>(0);
   const [projectFunds, setProjectFunds] = useState<Record<string, number>>({}); 
 
-  // Debt Form State
+  // Debt & Pool Edit State
+  const [isEditingPool, setIsEditingPool] = useState(false);
+  const [poolEditValue, setPoolEditValue] = useState("");
+  const [isEditingDebt, setIsEditingDebt] = useState(false);
   const [debtNameInput, setDebtNameInput] = useState("");
   const [debtTargetInput, setDebtTargetInput] = useState("");
+  const [debtPaidInput, setDebtPaidInput] = useState("");
+  const [debtDeadlineInput, setDebtDeadlineInput] = useState("");
 
   // Load Data on Mount
   useEffect(() => {
@@ -91,6 +97,25 @@ export default function Home() {
     else localStorage.removeItem("life_os_debt");
   };
 
+  // Helper: Count remaining Wednesdays
+  const getWednesdaysLeft = (deadlineStr: string) => {
+    let count = 0;
+    let current = new Date();
+    current.setHours(0, 0, 0, 0);
+    const end = new Date(deadlineStr);
+    end.setHours(23, 59, 59, 999);
+    
+    while (current <= end) {
+      if (current.getDay() === 3) count++; // 3 = Wednesday
+      current.setDate(current.getDate() + 1);
+    }
+    return count;
+  };
+
+  const wednesdaysLeft = activeDebt ? getWednesdaysLeft(activeDebt.deadline) : 0;
+  const remainingDebt = activeDebt ? activeDebt.target_amount - activeDebt.amount_paid : 0;
+  const weeklyDebtCut = remainingDebt > 0 ? Math.ceil(remainingDebt / Math.max(1, wednesdaysLeft)) : 0;
+
   // Payday Engine
   const handleLogIncome = (e: React.FormEvent) => {
     e.preventDefault();
@@ -98,18 +123,50 @@ export default function Home() {
     if (!income) return;
 
     let debtDeducted = 0;
-    if (activeDebt && activeDebt.amount_paid < activeDebt.target_amount) {
-      const remainingBalance = activeDebt.target_amount - activeDebt.amount_paid;
-      debtDeducted = Math.min(Math.ceil(remainingBalance / 4), income, remainingBalance);
+    if (activeDebt && remainingDebt > 0) {
+      debtDeducted = Math.min(weeklyDebtCut, income, remainingDebt);
       saveDebtToLocal({ ...activeDebt, amount_paid: activeDebt.amount_paid + debtDeducted });
     }
 
     savePoolToLocal(rebuildPool + (income - debtDeducted));
     setIncomeAmount("");
-    alert(`Success! E£${debtDeducted} routed to debt. E£${income - debtDeducted} added to Rebuild Pool.`);
+    alert(`Success! E£${debtDeducted} routed to debt for this Wednesday. E£${income - debtDeducted} added to Rebuild Pool.`);
   };
 
-  // Image Compression
+  const handleSavePoolEdit = () => {
+    savePoolToLocal(parseInt(poolEditValue) || 0);
+    setIsEditingPool(false);
+  };
+
+  const handleSaveDebt = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!debtNameInput || !debtTargetInput || !debtDeadlineInput) return;
+    saveDebtToLocal({ 
+      name: debtNameInput, 
+      target_amount: parseInt(debtTargetInput), 
+      amount_paid: parseInt(debtPaidInput) || 0,
+      deadline: debtDeadlineInput
+    });
+    setIsEditingDebt(false);
+  };
+
+  const openDebtEditor = () => {
+    if (activeDebt) {
+      setDebtNameInput(activeDebt.name);
+      setDebtTargetInput(activeDebt.target_amount.toString());
+      setDebtPaidInput(activeDebt.amount_paid.toString());
+      setDebtDeadlineInput(activeDebt.deadline);
+    } else {
+      setDebtNameInput(""); setDebtTargetInput(""); setDebtPaidInput("0");
+      // Default to 5th of next month
+      const d = new Date();
+      d.setMonth(d.getMonth() + 1);
+      d.setDate(5);
+      setDebtDeadlineInput(d.toISOString().split('T')[0]);
+    }
+    setIsEditingDebt(true);
+  };
+
   const handleImageFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (file) {
@@ -191,13 +248,6 @@ export default function Home() {
     setTitleInput(""); setPriceInput(""); setQuantityInput("1"); setImageInput(""); setUrl(""); setSubGroupInput("");
   };
 
-  const handleCreateDebt = (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!debtNameInput || !debtTargetInput) return;
-    saveDebtToLocal({ name: debtNameInput, target_amount: parseInt(debtTargetInput), amount_paid: 0 });
-    setDebtNameInput(""); setDebtTargetInput("");
-  };
-
   // Helper Filters
   const parsePrice = (priceStr: string) => parseFloat(priceStr.replace(/[^0-9.-]+/g,"")) || 0;
   
@@ -235,7 +285,6 @@ export default function Home() {
         {/* ===================== INVENTORY ===================== */}
         {activeTab === "inventory" && (
           <div className="animate-in fade-in space-y-4">
-            
             <h2 className="text-[10px] font-bold text-white/50 uppercase tracking-widest mt-2 pl-1">Restockables</h2>
             {restockCost > 0 && (
               <div className="bg-amber-500/10 border border-amber-500/30 rounded-3xl p-5 flex items-center justify-between">
@@ -428,48 +477,105 @@ export default function Home() {
           </div>
         )}
 
-        {/* ===================== VAULT (ADMIN) ===================== */}
+        {/* ===================== VAULT ===================== */}
         {activeTab === "vault" && (
           <div className="animate-in fade-in space-y-6">
             
-            <div className="bg-green-500/10 border border-green-500/30 rounded-3xl p-6 flex justify-between items-center shadow-lg">
+            {/* Total Rebuild Pool */}
+            <div className="bg-green-500/10 border border-green-500/30 rounded-3xl p-6 shadow-lg flex items-center justify-between">
               <div>
                 <h3 className="text-green-400 font-bold text-sm">Total Rebuild Pool</h3>
                 <p className="text-green-400/60 text-xs">Available to deploy</p>
               </div>
-              <span className="text-3xl font-black text-green-400">E£{rebuildPool}</span>
-            </div>
-
-            <div className="bg-white/5 border border-white/10 rounded-3xl p-6 shadow-lg">
-              <h2 className="text-[10px] font-bold text-white/50 uppercase tracking-widest mb-4">Liability Target</h2>
-              {activeDebt ? (
-                <div>
-                  <div className="flex justify-between items-end mb-3"><span className="text-xl font-bold text-white">{activeDebt.name}</span><span className="text-red-400 font-bold tabular-nums">{activeDebt.amount_paid} / {activeDebt.target_amount}</span></div>
-                  <div className="h-2 w-full bg-black/40 rounded-full overflow-hidden border border-white/5">
-                    <div className="h-full bg-red-500" style={{ width: `${Math.min((activeDebt.amount_paid / activeDebt.target_amount) * 100, 100)}%` }}></div>
-                  </div>
-                  <button onClick={() => saveDebtToLocal(null)} className="mt-4 text-xs text-red-400 font-bold">Clear Debt Tracker</button>
+              {isEditingPool ? (
+                <div className="flex items-center gap-2">
+                  <input type="number" value={poolEditValue} onChange={(e) => setPoolEditValue(e.target.value)} className="w-24 bg-black/40 border border-green-500/50 rounded-xl px-3 py-1 text-green-400 font-black text-xl outline-none" autoFocus />
+                  <button onClick={handleSavePoolEdit} className="p-2 bg-green-500/20 text-green-400 rounded-xl hover:bg-green-500/40"><Save size={16} /></button>
                 </div>
               ) : (
-                <form onSubmit={handleCreateDebt} className="flex flex-col gap-4 mt-2">
-                  <input type="text" value={debtNameInput} onChange={(e) => setDebtNameInput(e.target.value)} placeholder="Objective Name (e.g. Credit Card)" className="bg-black/20 border border-white/5 rounded-2xl px-4 py-3 text-white text-sm outline-none" required />
-                  <input type="number" value={debtTargetInput} onChange={(e) => setDebtTargetInput(e.target.value)} placeholder="Total Amount" className="bg-black/20 border border-white/5 rounded-2xl px-4 py-3 text-white text-sm outline-none" required />
-                  <button type="submit" className="w-full bg-red-500/20 border border-red-500/30 text-red-400 font-bold py-3.5 rounded-2xl">Set Liability</button>
-                </form>
+                <div className="flex items-center gap-3">
+                  <span className="text-3xl font-black text-green-400">E£{rebuildPool}</span>
+                  <button onClick={() => { setPoolEditValue(rebuildPool.toString()); setIsEditingPool(true); }} className="text-green-400/50 hover:text-green-400"><Edit2 size={16} /></button>
+                </div>
               )}
             </div>
 
+            {/* Active Debt / Liability Target */}
             <div className="bg-white/5 border border-white/10 rounded-3xl p-6 shadow-lg">
-              <h2 className="text-[10px] font-bold text-white/50 uppercase tracking-widest mb-4">Monday Split Engine</h2>
+              <div className="flex justify-between items-center mb-4">
+                <h2 className="text-[10px] font-bold text-white/50 uppercase tracking-widest">Liability Target</h2>
+                <button onClick={openDebtEditor} className="text-white/40 hover:text-white flex items-center gap-1 text-[10px] font-bold uppercase tracking-wider"><Edit2 size={12} /> {activeDebt ? 'Edit' : 'Set'}</button>
+              </div>
+
+              {isEditingDebt ? (
+                <form onSubmit={handleSaveDebt} className="flex flex-col gap-3 animate-in fade-in">
+                  <input type="text" value={debtNameInput} onChange={(e) => setDebtNameInput(e.target.value)} placeholder="Objective Name (e.g. Credit Card)" className="bg-black/20 border border-white/5 rounded-2xl px-4 py-3 text-white text-sm outline-none" required />
+                  <div className="flex gap-3">
+                    <div className="flex-1">
+                      <label className="block text-[10px] text-white/40 uppercase tracking-widest mb-1 pl-1">Target Amount</label>
+                      <input type="number" value={debtTargetInput} onChange={(e) => setDebtTargetInput(e.target.value)} placeholder="Total Amount" className="w-full bg-black/20 border border-white/5 rounded-2xl px-4 py-3 text-white text-sm outline-none" required />
+                    </div>
+                    <div className="flex-1">
+                      <label className="block text-[10px] text-white/40 uppercase tracking-widest mb-1 pl-1">Amount Paid</label>
+                      <input type="number" value={debtPaidInput} onChange={(e) => setDebtPaidInput(e.target.value)} placeholder="Paid so far" className="w-full bg-black/20 border border-white/5 rounded-2xl px-4 py-3 text-white text-sm outline-none" />
+                    </div>
+                  </div>
+                  <div>
+                    <label className="block text-[10px] text-white/40 uppercase tracking-widest mb-1 pl-1">Deadline</label>
+                    <input type="date" value={debtDeadlineInput} onChange={(e) => setDebtDeadlineInput(e.target.value)} className="w-full bg-black/20 border border-white/5 rounded-2xl px-4 py-3 text-white text-sm outline-none" required />
+                  </div>
+                  <div className="flex gap-3 mt-2">
+                    <button type="button" onClick={() => setIsEditingDebt(false)} className="flex-1 bg-white/5 border border-white/10 text-white font-bold py-3.5 rounded-2xl">Cancel</button>
+                    <button type="submit" className="flex-1 bg-red-500/20 border border-red-500/30 text-red-400 font-bold py-3.5 rounded-2xl">Save Liability</button>
+                  </div>
+                  {activeDebt && <button type="button" onClick={() => { saveDebtToLocal(null); setIsEditingDebt(false); }} className="w-full text-red-500/50 hover:text-red-400 text-xs font-bold py-2 mt-2">Delete Liability</button>}
+                </form>
+              ) : activeDebt ? (
+                <div>
+                  <div className="flex justify-between items-end mb-3">
+                    <span className="text-xl font-bold text-white line-clamp-1">{activeDebt.name}</span>
+                    <span className="text-red-400 font-bold tabular-nums shrink-0 ml-4">{activeDebt.amount_paid} / {activeDebt.target_amount}</span>
+                  </div>
+                  <div className="h-2 w-full bg-black/40 rounded-full overflow-hidden border border-white/5 mb-4">
+                    <div className="h-full bg-red-500" style={{ width: `${Math.min((activeDebt.amount_paid / activeDebt.target_amount) * 100, 100)}%` }}></div>
+                  </div>
+                  <div className="flex justify-between items-center bg-black/20 rounded-xl p-3 border border-white/5">
+                    <div>
+                      <p className="text-[10px] text-white/40 uppercase tracking-widest">Time Remaining</p>
+                      <p className="text-white font-bold text-sm">{wednesdaysLeft} Wednesdays</p>
+                    </div>
+                    <div className="text-right">
+                      <p className="text-[10px] text-white/40 uppercase tracking-widest">Required Deduction</p>
+                      <p className="text-red-400 font-bold text-sm">E£{weeklyDebtCut} / week</p>
+                    </div>
+                  </div>
+                </div>
+              ) : (
+                <p className="text-white/40 text-sm">No active liabilities tracked.</p>
+              )}
+            </div>
+
+            {/* Payday Engine */}
+            <div className="bg-white/5 border border-white/10 rounded-3xl p-6 shadow-lg">
+              <h2 className="text-[10px] font-bold text-white/50 uppercase tracking-widest mb-4">Expected Payout Log</h2>
               <form onSubmit={handleLogIncome} className="flex flex-col gap-4">
-                <div className="bg-black/20 rounded-2xl p-4 border border-white/5">
-                  <label className="block text-[10px] text-white/50 font-bold mb-1 uppercase tracking-wider">Expected Payout</label>
-                  <input type="number" value={incomeAmount} onChange={(e) => setIncomeAmount(e.target.value)} className="w-full bg-transparent text-3xl font-bold text-white outline-none" placeholder="0" required />
+                <div className="bg-black/20 rounded-2xl p-4 border border-white/5 flex items-center justify-between">
+                  <div>
+                    <label className="block text-[10px] text-white/50 font-bold mb-1 uppercase tracking-wider">Amount</label>
+                    <input type="number" value={incomeAmount} onChange={(e) => setIncomeAmount(e.target.value)} className="w-full bg-transparent text-3xl font-bold text-white outline-none" placeholder="0" required />
+                  </div>
+                  {incomeAmount && activeDebt && remainingDebt > 0 && (
+                    <div className="text-right shrink-0">
+                      <p className="text-[10px] text-red-400/80 uppercase font-bold tracking-widest">Debt Cut</p>
+                      <p className="text-red-400 font-bold">- {Math.min(weeklyDebtCut, parseInt(incomeAmount), remainingDebt)}</p>
+                    </div>
+                  )}
                 </div>
                 <button type="submit" className="w-full bg-green-500 text-black py-4 rounded-2xl font-bold text-lg">Route Funds</button>
               </form>
             </div>
 
+            {/* Global DB Manager */}
             <div className="bg-white/5 border border-white/10 rounded-3xl p-6 shadow-lg">
               <h2 className="text-[10px] font-bold text-white/50 uppercase tracking-widest mb-4">Global Database</h2>
               <div className="space-y-3">
