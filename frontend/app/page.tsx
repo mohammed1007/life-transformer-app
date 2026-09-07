@@ -10,12 +10,13 @@ interface Goal {
   category?: string;
   tier: "Inventory" | "Board" | "Dream";
   board?: "Room" | "Closet" | "Gym";
-  outfit?: string; // Legacy support for your first closet items
-  subGroup?: string; // New universal sub-folder system
+  outfit?: string; 
+  subGroup?: string; 
   stock_status: "IN_STOCK" | "LOW" | "OUT";
   image_url: string;
   original_url: string;
-  funded_amount: number;
+  funded_amount: number; // Kept for Dreams
+  quantity?: number; // New Quantity multiplier
 }
 
 interface Debt {
@@ -37,6 +38,7 @@ export default function Home() {
   const [url, setUrl] = useState("");
   const [titleInput, setTitleInput] = useState("");
   const [priceInput, setPriceInput] = useState("");
+  const [quantityInput, setQuantityInput] = useState("1");
   const [imageInput, setImageInput] = useState(""); 
   const [currency, setCurrency] = useState("EGP");
   const [category, setCategory] = useState("Maintenance");
@@ -49,6 +51,7 @@ export default function Home() {
   const [activeDebt, setActiveDebt] = useState<Debt | null>(null);
   const [incomeAmount, setIncomeAmount] = useState("");
   const [rebuildPool, setRebuildPool] = useState<number>(0);
+  const [projectFunds, setProjectFunds] = useState<Record<string, number>>({}); // Project-level funding
 
   // Debt Form State
   const [debtNameInput, setDebtNameInput] = useState("");
@@ -67,11 +70,13 @@ export default function Home() {
     const savedDebt = localStorage.getItem("life_os_debt");
     const savedRoutines = localStorage.getItem("life_os_routines");
     const savedPool = localStorage.getItem("life_os_pool");
+    const savedProjectFunds = localStorage.getItem("life_os_project_funds");
 
     if (savedGoals) setGoals(JSON.parse(savedGoals));
     if (savedDebt) setActiveDebt(JSON.parse(savedDebt));
     if (savedRoutines) setRoutines(JSON.parse(savedRoutines));
     if (savedPool) setRebuildPool(JSON.parse(savedPool));
+    if (savedProjectFunds) setProjectFunds(JSON.parse(savedProjectFunds));
   }, []);
 
   const saveGoalsToLocal = (newGoals: Goal[]) => {
@@ -84,13 +89,15 @@ export default function Home() {
     localStorage.setItem("life_os_pool", JSON.stringify(amount));
   };
 
+  const saveProjectFundsToLocal = (funds: Record<string, number>) => {
+    setProjectFunds(funds);
+    localStorage.setItem("life_os_project_funds", JSON.stringify(funds));
+  };
+
   const saveDebtToLocal = (debt: Debt | null) => {
     setActiveDebt(debt);
-    if (debt) {
-      localStorage.setItem("life_os_debt", JSON.stringify(debt));
-    } else {
-      localStorage.removeItem("life_os_debt");
-    }
+    if (debt) localStorage.setItem("life_os_debt", JSON.stringify(debt));
+    else localStorage.removeItem("life_os_debt");
   };
 
   // Payday Engine
@@ -103,8 +110,7 @@ export default function Home() {
     if (activeDebt && activeDebt.amount_paid < activeDebt.target_amount) {
       const remainingBalance = activeDebt.target_amount - activeDebt.amount_paid;
       debtDeducted = Math.min(Math.ceil(remainingBalance / 4), income, remainingBalance);
-      const updatedDebt = { ...activeDebt, amount_paid: activeDebt.amount_paid + debtDeducted };
-      saveDebtToLocal(updatedDebt);
+      saveDebtToLocal({ ...activeDebt, amount_paid: activeDebt.amount_paid + debtDeducted });
     }
 
     savePoolToLocal(rebuildPool + (income - debtDeducted));
@@ -140,6 +146,7 @@ export default function Home() {
     const payload: Goal = {
       id: editingGoalId || Date.now(),
       title: titleInput, price: priceInput, currency, tier, category,
+      quantity: parseInt(quantityInput) || 1,
       board: tier === "Board" ? boardInput : undefined,
       subGroup: tier === "Board" ? (subGroupInput || "General") : undefined,
       stock_status: "IN_STOCK", 
@@ -148,11 +155,9 @@ export default function Home() {
       funded_amount: editingGoalId ? goals.find(g => g.id === editingGoalId)?.funded_amount || 0 : 0
     };
 
-    if (editingGoalId) {
-      saveGoalsToLocal(goals.map(g => g.id === editingGoalId ? { ...g, ...payload } : g));
-    } else {
-      saveGoalsToLocal([payload, ...goals]);
-    }
+    if (editingGoalId) saveGoalsToLocal(goals.map(g => g.id === editingGoalId ? { ...g, ...payload } : g));
+    else saveGoalsToLocal([payload, ...goals]);
+    
     closeModal();
   };
 
@@ -160,6 +165,13 @@ export default function Home() {
     if (rebuildPool < amount) return alert("Insufficient funds in Rebuild Pool!");
     savePoolToLocal(rebuildPool - amount);
     saveGoalsToLocal(goals.map(g => g.id === id ? { ...g, funded_amount: g.funded_amount + amount } : g));
+  };
+
+  const handleFundProject = (board: string, project: string, amount: number) => {
+    if (rebuildPool < amount) return alert("Insufficient funds in Rebuild Pool!");
+    savePoolToLocal(rebuildPool - amount);
+    const key = `${board}_${project}`;
+    saveProjectFundsToLocal({ ...projectFunds, [key]: (projectFunds[key] || 0) + amount });
   };
 
   const toggleStockStatus = (goal: Goal) => {
@@ -172,7 +184,7 @@ export default function Home() {
   };
 
   const openEditModal = (goal: Goal) => {
-    setEditingGoalId(goal.id); setTitleInput(goal.title); setPriceInput(goal.price);
+    setEditingGoalId(goal.id); setTitleInput(goal.title); setPriceInput(goal.price); setQuantityInput((goal.quantity || 1).toString());
     setImageInput(goal.image_url); setUrl(goal.original_url || ""); setCurrency(goal.currency);
     setCategory(goal.category || "Maintenance"); setTier(goal.tier); setBoardInput(goal.board || "Room"); 
     setSubGroupInput(goal.subGroup || goal.outfit || "");
@@ -181,7 +193,7 @@ export default function Home() {
 
   const closeModal = () => {
     setShowFabModal(false); setEditingGoalId(null);
-    setTitleInput(""); setPriceInput(""); setImageInput(""); setUrl(""); setSubGroupInput("");
+    setTitleInput(""); setPriceInput(""); setQuantityInput("1"); setImageInput(""); setUrl(""); setSubGroupInput("");
   };
 
   const handleCreateDebt = (e: React.FormEvent) => {
@@ -197,25 +209,17 @@ export default function Home() {
     localStorage.setItem("life_os_routines", JSON.stringify(updated));
   };
 
-  // Helper Filters & Budgets
+  // Helper Filters
   const parsePrice = (priceStr: string) => parseFloat(priceStr.replace(/[^0-9.-]+/g,"")) || 0;
   
   const inventoryItems = goals.filter(g => g.tier === "Inventory");
   const dreamItems = goals.filter(g => g.tier === "Dream");
   const boardItems = goals.filter(g => g.tier === "Board" && g.board === activeBoard);
   
-  // Universal Sub-Group Logic (Handles Room, Closet, and Gym)
   const subGroups = Array.from(new Set(boardItems.map(g => g.subGroup || g.outfit || "General")));
   const activeSubGroupItems = boardItems.filter(g => (g.subGroup || g.outfit || "General") === selectedSubGroup);
-  
-  // Current view logic
-  const currentViewItems = selectedSubGroup ? activeSubGroupItems : [];
 
-  const restockCost = inventoryItems.filter(g => g.stock_status !== "IN_STOCK").reduce((sum: number, g: Goal) => sum + parsePrice(g.price), 0);
-
-  const phaseTotal = currentViewItems.reduce((sum: number, g: Goal) => sum + parsePrice(g.price), 0);
-  const phaseFunded = currentViewItems.reduce((sum: number, g: Goal) => sum + g.funded_amount, 0);
-  const phaseProgress = phaseTotal > 0 ? Math.min((phaseFunded / phaseTotal) * 100, 100) : 0;
+  const restockCost = inventoryItems.filter(g => g.stock_status !== "IN_STOCK").reduce((sum, g) => sum + (parsePrice(g.price) * (g.quantity || 1)), 0);
 
   const navItems = [
     { id: 'daily', icon: CheckCircle2, label: 'Daily' },
@@ -270,15 +274,16 @@ export default function Home() {
             
             {inventoryItems.map((goal) => (
               <div key={goal.id} className="bg-white/5 border border-white/10 rounded-3xl p-4 flex items-center gap-4 shadow-lg">
-                <div className="w-16 h-16 rounded-2xl bg-black/40 overflow-hidden shrink-0">
+                <div className="w-16 h-16 rounded-2xl bg-black/40 overflow-hidden shrink-0 relative">
                   <img src={goal.image_url} className="w-full h-full object-cover opacity-80" />
+                  {goal.quantity && goal.quantity > 1 && <span className="absolute bottom-1 right-1 bg-black/80 text-[10px] font-bold px-1.5 py-0.5 rounded-md border border-white/20">x{goal.quantity}</span>}
                 </div>
                 <div className="flex-1">
                   <div className="flex items-center gap-2 mb-1">
                     <h3 className="font-bold text-sm text-white line-clamp-1">{goal.title}</h3>
                     {goal.original_url && goal.original_url !== "#" && <a href={goal.original_url} target="_blank" rel="noopener noreferrer" className="text-white/40 hover:text-green-400"><ExternalLink size={14} /></a>}
                   </div>
-                  <span className="text-white/50 text-xs font-bold">{goal.price} {goal.currency}</span>
+                  <span className="text-white/50 text-xs font-bold">{goal.price} {goal.currency} {goal.quantity && goal.quantity > 1 && `(x${goal.quantity})`}</span>
                 </div>
                 <button onClick={() => toggleStockStatus(goal)} className={`p-3 rounded-2xl flex flex-col items-center justify-center gap-1 w-20 shrink-0 transition-all border ${goal.stock_status === 'LOW' ? 'bg-amber-500/20 border-amber-500/30 text-amber-400' : goal.stock_status === 'OUT' ? 'bg-red-500/20 border-red-500/30 text-red-400' : 'bg-green-500/20 border-green-500/30 text-green-400'}`}>
                   {goal.stock_status === 'LOW' ? <AlertTriangle size={18} /> : goal.stock_status === 'OUT' ? <XCircle size={18} /> : <Package size={18} />}
@@ -286,7 +291,6 @@ export default function Home() {
                 </button>
               </div>
             ))}
-            {inventoryItems.length === 0 && <p className="text-white/40 text-center py-8 text-sm">No items tracking in inventory.</p>}
           </div>
         )}
 
@@ -301,74 +305,96 @@ export default function Home() {
               ))}
             </div>
 
-            {/* Sub-Group Grid View (Outfits / Sections) */}
             {!selectedSubGroup ? (
-              <div className="grid grid-cols-2 gap-4">
-                {subGroups.map(group => (
-                  <button key={group} onClick={() => setSelectedSubGroup(group)} className="bg-white/5 border border-white/10 hover:border-green-500/50 rounded-3xl p-6 text-left transition-all aspect-square flex flex-col justify-end shadow-lg">
-                    <h3 className="font-bold text-lg text-white">{group}</h3>
-                    <p className="text-white/40 text-xs mt-1">{boardItems.filter(g => (g.subGroup || g.outfit || "General") === group).length} items</p>
-                  </button>
-                ))}
-                {subGroups.length === 0 && <p className="text-white/40 text-sm col-span-2">No projects built here yet.</p>}
+              <div className="flex flex-col gap-4">
+                {subGroups.map(group => {
+                  const itemsInGroup = boardItems.filter(g => (g.subGroup || g.outfit || "General") === group);
+                  const cost = itemsInGroup.reduce((sum, g) => sum + (parsePrice(g.price) * (g.quantity || 1)), 0);
+                  const funded = projectFunds[`${activeBoard}_${group}`] || 0;
+                  const progress = cost > 0 ? Math.min((funded / cost) * 100, 100) : 0;
+                  const images = itemsInGroup.map(g => g.image_url).slice(0, 5);
+
+                  return (
+                    <button key={group} onClick={() => setSelectedSubGroup(group)} className="bg-white/5 border border-white/10 hover:border-green-500/50 rounded-3xl p-5 text-left transition-all flex flex-col gap-4 shadow-lg w-full relative overflow-hidden">
+                      <div className="flex justify-between items-start z-10 relative">
+                        <div>
+                          <h3 className="font-bold text-xl text-white">{group}</h3>
+                          <p className="text-white/40 text-xs mt-1 font-bold">{itemsInGroup.length} ITEMS REQUIRED</p>
+                        </div>
+                        <div className="flex -space-x-3">
+                          {images.map((img, i) => <img key={i} src={img} className="w-10 h-10 rounded-full border-2 border-[#1c1c1e] object-cover bg-black" />)}
+                        </div>
+                      </div>
+                      <div className="z-10 relative">
+                        <div className="flex justify-between text-xs mb-1.5">
+                          <span className="text-green-400 font-bold">{funded} SAVED</span>
+                          <span className="text-white/60 font-bold">{cost} TOTAL</span>
+                        </div>
+                        <div className="h-1.5 w-full bg-black/50 rounded-full overflow-hidden border border-white/5">
+                          <div className="h-full bg-green-500 transition-all duration-1000" style={{ width: `${progress}%` }}></div>
+                        </div>
+                      </div>
+                    </button>
+                  );
+                })}
               </div>
             ) : (
-              
-              /* Specific Sub-Group View */
               <div className="space-y-6">
-                <button onClick={() => setSelectedSubGroup(null)} className="flex items-center gap-2 text-green-400 font-bold text-sm mb-4">
-                  <ChevronLeft size={16} /> Back to {activeBoard}
+                <button onClick={() => setSelectedSubGroup(null)} className="flex items-center gap-2 text-green-400 font-bold text-sm mb-2">
+                  <ChevronLeft size={16} /> Back to Projects
                 </button>
                 
-                {/* Global Phase Progress */}
-                {currentViewItems.length > 0 && (
-                  <div className="bg-white/5 border border-white/10 rounded-3xl p-5 mb-2 shadow-lg">
-                    <div className="flex justify-between items-end mb-3">
-                      <div>
-                        <h3 className="text-white font-bold text-sm uppercase tracking-widest">{selectedSubGroup} Budget</h3>
-                        <p className="text-white/50 text-xs mt-1">Total capital required</p>
-                      </div>
-                      <div className="text-right">
-                        <span className="text-green-400 font-bold text-lg tabular-nums">{phaseFunded}</span>
-                        <span className="text-white/50 text-xs"> / {phaseTotal}</span>
-                      </div>
-                    </div>
-                    <div className="h-2 w-full bg-black/40 rounded-full overflow-hidden border border-white/5">
-                      <div className="h-full bg-green-500 transition-all duration-1000" style={{ width: `${phaseProgress}%` }}></div>
-                    </div>
-                  </div>
-                )}
-                
-                {currentViewItems.map((goal) => {
-                  const targetPrice = parsePrice(goal.price) || 1; 
-                  const itemProgress = Math.min((goal.funded_amount / targetPrice) * 100, 100);
+                {/* Master Project Funding Console */}
+                {(() => {
+                  const cost = activeSubGroupItems.reduce((sum, g) => sum + (parsePrice(g.price) * (g.quantity || 1)), 0);
+                  const funded = projectFunds[`${activeBoard}_${selectedSubGroup}`] || 0;
+                  const progress = cost > 0 ? Math.min((funded / cost) * 100, 100) : 0;
                   return (
-                    <div key={goal.id} className="bg-white/5 border border-white/10 rounded-3xl overflow-hidden flex flex-col shadow-lg">
-                      <div className="h-48 w-full bg-black/40 relative block">
-                        <img src={goal.image_url} className="absolute inset-0 w-full h-full object-cover opacity-80" />
-                        {goal.original_url && goal.original_url !== "#" && (
-                          <a href={goal.original_url} target="_blank" rel="noopener noreferrer" className="absolute top-4 right-4 bg-black/60 backdrop-blur-md p-2 rounded-full border border-white/10 text-white hover:text-green-400 transition-colors">
-                            <ExternalLink size={18} />
-                          </a>
-                        )}
+                    <div className="bg-white/5 border border-white/10 rounded-3xl p-5 shadow-lg">
+                      <div className="flex justify-between items-end mb-3">
+                        <div>
+                          <h3 className="text-white font-bold text-sm uppercase tracking-widest">{selectedSubGroup} Funding</h3>
+                          <p className="text-white/50 text-xs mt-1">Project capital requirements</p>
+                        </div>
+                        <div className="text-right">
+                          <span className="text-green-400 font-bold text-lg tabular-nums">{funded}</span>
+                          <span className="text-white/50 text-xs"> / {cost}</span>
+                        </div>
                       </div>
-                      <div className="p-5">
-                        <h3 className="font-bold text-lg line-clamp-2 mb-4 text-white leading-tight">{goal.title}</h3>
-                        <div className="flex justify-between items-end mb-2">
-                          <span className="text-white/50 text-xs font-bold">{goal.funded_amount} SAVED</span>
-                          <span className="font-bold text-white text-lg">{goal.price} {goal.currency}</span>
-                        </div>
-                        <div className="h-2 w-full bg-black/40 rounded-full overflow-hidden mb-6 border border-white/5">
-                          <div className="h-full bg-green-500 transition-all duration-1000" style={{ width: `${itemProgress}%` }}></div>
-                        </div>
-                        <div className="grid grid-cols-2 gap-3">
-                          <button onClick={() => handleFundGoal(goal.id, 50)} className="bg-white/10 hover:bg-white/20 text-white font-bold py-3.5 rounded-2xl">+ 50</button>
-                          <button onClick={() => handleFundGoal(goal.id, 200)} className="bg-white/10 hover:bg-white/20 text-white font-bold py-3.5 rounded-2xl">+ 200</button>
-                        </div>
+                      <div className="h-2 w-full bg-black/40 rounded-full overflow-hidden mb-6 border border-white/5">
+                        <div className="h-full bg-green-500 transition-all duration-1000" style={{ width: `${progress}%` }}></div>
+                      </div>
+                      <div className="grid grid-cols-2 gap-3">
+                        <button onClick={() => handleFundProject(activeBoard, selectedSubGroup, 50)} className="bg-white/10 hover:bg-white/20 text-white font-bold py-3.5 rounded-2xl">+ 50</button>
+                        <button onClick={() => handleFundProject(activeBoard, selectedSubGroup, 200)} className="bg-white/10 hover:bg-white/20 text-white font-bold py-3.5 rounded-2xl">+ 200</button>
                       </div>
                     </div>
                   );
-                })}
+                })()}
+                
+                {/* Items strictly displayed as a checklist/list */}
+                <h2 className="text-[10px] font-bold text-white/50 uppercase tracking-widest pl-1 mt-6">Project Items</h2>
+                <div className="flex flex-col gap-3">
+                  {activeSubGroupItems.map((goal) => (
+                    <div key={goal.id} className="bg-white/5 rounded-2xl flex overflow-hidden shadow-lg border border-white/10 p-2 pr-4 gap-4 items-center">
+                      <div className="w-16 h-16 rounded-xl bg-black/40 relative overflow-hidden shrink-0">
+                        <img src={goal.image_url} className="absolute inset-0 w-full h-full object-cover opacity-80" />
+                        {goal.original_url && goal.original_url !== "#" && (
+                          <a href={goal.original_url} target="_blank" rel="noopener noreferrer" className="absolute top-1 right-1 bg-black/80 p-1 rounded-md text-white hover:text-green-400">
+                            <ExternalLink size={10} />
+                          </a>
+                        )}
+                      </div>
+                      <div className="flex-1 min-w-0 py-1">
+                        <h4 className="font-bold text-sm text-white line-clamp-1">{goal.title}</h4>
+                        <div className="flex justify-between items-end mt-1">
+                          <p className="text-white/50 text-xs">{goal.price} {goal.currency} <span className="font-bold text-white">x {goal.quantity || 1}</span></p>
+                          <p className="text-green-400 font-bold text-sm">{parsePrice(goal.price) * (goal.quantity || 1)} {goal.currency}</p>
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
               </div>
             )}
           </div>
@@ -379,7 +405,7 @@ export default function Home() {
           <div className="animate-in fade-in space-y-6">
             <h2 className="text-[10px] font-bold text-white/50 uppercase tracking-widest mb-2">High-Ticket Evolution</h2>
             {dreamItems.map((goal) => {
-              const targetPrice = parsePrice(goal.price) || 1; 
+              const targetPrice = (parsePrice(goal.price) * (goal.quantity || 1)) || 1; 
               const itemProgress = Math.min((goal.funded_amount / targetPrice) * 100, 100);
               return (
                 <div key={goal.id} className="bg-white/5 border border-white/10 rounded-3xl overflow-hidden flex flex-col shadow-lg">
@@ -390,7 +416,7 @@ export default function Home() {
                     <h3 className="font-bold text-lg line-clamp-2 mb-4 text-white leading-tight">{goal.title}</h3>
                     <div className="flex justify-between items-end mb-2">
                       <span className="text-white/50 text-xs font-bold">{goal.funded_amount} SAVED</span>
-                      <span className="font-bold text-white text-lg">{goal.price} {goal.currency}</span>
+                      <span className="font-bold text-white text-lg">{targetPrice} {goal.currency}</span>
                     </div>
                     <div className="h-2 w-full bg-black/40 rounded-full overflow-hidden mb-6 border border-white/5">
                       <div className="h-full bg-blue-500 transition-all duration-1000" style={{ width: `${itemProgress}%` }}></div>
@@ -400,14 +426,12 @@ export default function Home() {
                 </div>
               );
             })}
-            {dreamItems.length === 0 && <p className="text-white/40 text-sm">No massive targets set yet.</p>}
           </div>
         )}
 
         {/* ===================== VAULT (ADMIN) ===================== */}
         {activeTab === "vault" && (
           <div className="animate-in fade-in space-y-6">
-            
             <div className="bg-white/5 border border-white/10 rounded-3xl p-6 shadow-lg">
               <h2 className="text-[10px] font-bold text-white/50 uppercase tracking-widest mb-4">Monday Split Engine</h2>
               <form onSubmit={handleLogIncome} className="flex flex-col gap-4">
@@ -418,32 +442,13 @@ export default function Home() {
                 <button type="submit" className="w-full bg-green-500 text-black py-4 rounded-2xl font-bold text-lg">Route Funds</button>
               </form>
             </div>
-
+            
             <div className="bg-green-500/10 border border-green-500/30 rounded-3xl p-6 flex justify-between items-center">
               <div>
                 <h3 className="text-green-400 font-bold text-sm">Total Rebuild Pool</h3>
                 <p className="text-green-400/60 text-xs">Available to deploy</p>
               </div>
               <span className="text-3xl font-black text-green-400">E£{rebuildPool}</span>
-            </div>
-
-            <div className="bg-white/5 border border-white/10 rounded-3xl p-6 shadow-lg">
-              <h2 className="text-[10px] font-bold text-white/50 uppercase tracking-widest mb-4">Liability Target</h2>
-              {activeDebt ? (
-                <div>
-                  <div className="flex justify-between items-end mb-3"><span className="text-xl font-bold text-white">{activeDebt.name}</span><span className="text-red-400 font-bold tabular-nums">{activeDebt.amount_paid} / {activeDebt.target_amount}</span></div>
-                  <div className="h-2 w-full bg-black/40 rounded-full overflow-hidden border border-white/5">
-                    <div className="h-full bg-red-500" style={{ width: `${Math.min((activeDebt.amount_paid / activeDebt.target_amount) * 100, 100)}%` }}></div>
-                  </div>
-                  <button onClick={() => saveDebtToLocal(null)} className="mt-4 text-xs text-red-400 font-bold">Clear Debt Tracker</button>
-                </div>
-              ) : (
-                <form onSubmit={handleCreateDebt} className="flex flex-col gap-4 mt-2">
-                  <input type="text" value={debtNameInput} onChange={(e) => setDebtNameInput(e.target.value)} placeholder="Objective Name" className="bg-black/20 border border-white/5 rounded-2xl px-4 py-3 text-white text-sm outline-none" required />
-                  <input type="number" value={debtTargetInput} onChange={(e) => setDebtTargetInput(e.target.value)} placeholder="Total Amount" className="bg-black/20 border border-white/5 rounded-2xl px-4 py-3 text-white text-sm outline-none" required />
-                  <button type="submit" className="w-full bg-red-500/20 border border-red-500/30 text-red-400 font-bold py-3.5 rounded-2xl">Set Liability</button>
-                </form>
-              )}
             </div>
 
             <div className="bg-white/5 border border-white/10 rounded-3xl p-6 shadow-lg">
@@ -461,7 +466,6 @@ export default function Home() {
                     </div>
                   </div>
                 ))}
-                {goals.length === 0 && <p className="text-white/40 text-xs">No items in database.</p>}
               </div>
             </div>
           </div>
@@ -477,7 +481,6 @@ export default function Home() {
           </div>
           
           <form onSubmit={handleSaveGoal} className="flex flex-col gap-4 pb-12">
-            
             <div className="bg-white/5 rounded-2xl p-4 border border-white/10 flex items-center gap-4">
               <div className="w-16 h-16 rounded-xl bg-black/40 overflow-hidden flex items-center justify-center shrink-0 border border-white/10">
                 {imageInput ? <img src={imageInput} className="w-full h-full object-cover" /> : <ImageIcon className="text-white/30" size={24} />}
@@ -515,10 +518,8 @@ export default function Home() {
                   </select>
                 </div>
                 <div className="flex-1 bg-white/5 rounded-2xl p-4 border border-white/10">
-                  <label className="block text-[10px] text-white/50 font-bold mb-1 uppercase tracking-wider">
-                    {boardInput === 'Closet' ? 'Outfit Name' : boardInput === 'Room' ? 'Room Section' : 'Category'}
-                  </label>
-                  <input type="text" value={subGroupInput} onChange={(e) => setSubGroupInput(e.target.value)} placeholder={boardInput === 'Closet' ? 'e.g. Techwear' : boardInput === 'Room' ? 'e.g. Furniture' : 'e.g. Supplements'} className="w-full bg-transparent text-white font-bold outline-none" />
+                  <label className="block text-[10px] text-white/50 font-bold mb-1 uppercase tracking-wider">Project / Outfit Name</label>
+                  <input type="text" value={subGroupInput} onChange={(e) => setSubGroupInput(e.target.value)} placeholder="e.g. Paint Job" className="w-full bg-transparent text-white font-bold outline-none" />
                 </div>
               </div>
             )}
@@ -531,8 +532,12 @@ export default function Home() {
                 </select>
               </div>
               <div className="flex-1 bg-black/20 rounded-2xl p-4 border border-green-500/30 flex flex-col justify-center">
-                <label className="block text-[10px] text-white/50 font-bold mb-1 uppercase tracking-wider">Price</label>
+                <label className="block text-[10px] text-white/50 font-bold mb-1 uppercase tracking-wider">Unit Price</label>
                 <input type="text" value={priceInput} onChange={(e) => setPriceInput(e.target.value)} placeholder="0.00" className="w-full bg-transparent text-2xl font-black text-green-400 outline-none" required />
+              </div>
+              <div className="w-1/4 bg-white/5 rounded-2xl p-4 border border-white/10 flex flex-col justify-center">
+                <label className="block text-[10px] text-white/50 font-bold mb-1 uppercase tracking-wider">Qty</label>
+                <input type="number" min="1" value={quantityInput} onChange={(e) => setQuantityInput(e.target.value)} className="w-full bg-transparent text-xl font-bold text-white outline-none" required />
               </div>
             </div>
 
