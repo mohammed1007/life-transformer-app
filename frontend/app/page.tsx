@@ -1,6 +1,6 @@
 "use client";
 import { useState, useEffect } from "react";
-import { Wallet, Sparkles, CheckSquare, Square, Package, AlertTriangle, XCircle, ShoppingCart, Image as ImageIcon, ExternalLink, Trash2, Edit2, LayoutGrid, CheckCircle2, ChevronLeft, Plus, X } from 'lucide-react';
+import { Wallet, Sparkles, Package, AlertTriangle, XCircle, ShoppingCart, Image as ImageIcon, ExternalLink, Trash2, Edit2, LayoutGrid, CheckCircle2, ChevronLeft, Plus, X } from 'lucide-react';
 
 interface Goal {
   id: number;
@@ -26,7 +26,7 @@ interface Debt {
 }
 
 export default function Home() {
-  const [activeTab, setActiveTab] = useState<"daily" | "inventory" | "boards" | "dreams" | "vault">("daily");
+  const [activeTab, setActiveTab] = useState<"inventory" | "boards" | "dreams" | "vault">("inventory");
   const [activeBoard, setActiveBoard] = useState<"Room" | "Closet" | "Gym">("Room");
   const [selectedSubGroup, setSelectedSubGroup] = useState<string | null>(null);
   
@@ -57,24 +57,15 @@ export default function Home() {
   const [debtNameInput, setDebtNameInput] = useState("");
   const [debtTargetInput, setDebtTargetInput] = useState("");
 
-  const [routines, setRoutines] = useState([
-    { id: 1, text: 'Protocol: Morning & Night Skincare', done: false },
-    { id: 2, text: 'Nutrition: High-calorie oat, honey & creatine shake', done: false },
-    { id: 3, text: 'Training: Complete 3-Day Hypertrophy Split', done: false },
-    { id: 4, text: 'Sunday: Clean Sharp AC filter & Room Reset', done: false },
-  ]);
-
   // Load Data on Mount
   useEffect(() => {
     const savedGoals = localStorage.getItem("life_os_goals");
     const savedDebt = localStorage.getItem("life_os_debt");
-    const savedRoutines = localStorage.getItem("life_os_routines");
     const savedPool = localStorage.getItem("life_os_pool");
     const savedProjectFunds = localStorage.getItem("life_os_project_funds");
 
     if (savedGoals) setGoals(JSON.parse(savedGoals));
     if (savedDebt) setActiveDebt(JSON.parse(savedDebt));
-    if (savedRoutines) setRoutines(JSON.parse(savedRoutines));
     if (savedPool) setRebuildPool(JSON.parse(savedPool));
     if (savedProjectFunds) setProjectFunds(JSON.parse(savedProjectFunds));
   }, []);
@@ -184,7 +175,6 @@ export default function Home() {
   };
 
   const handleMarkBought = (id: number) => {
-    // Instantly removes a one-off item without a confirmation prompt
     saveGoalsToLocal(goals.filter(g => g.id !== id));
   };
 
@@ -208,12 +198,6 @@ export default function Home() {
     setDebtNameInput(""); setDebtTargetInput("");
   };
 
-  const toggleRoutine = (id: number) => {
-    const updated = routines.map(r => r.id === id ? { ...r, done: !r.done } : r);
-    setRoutines(updated);
-    localStorage.setItem("life_os_routines", JSON.stringify(updated));
-  };
-
   // Helper Filters
   const parsePrice = (priceStr: string) => parseFloat(priceStr.replace(/[^0-9.-]+/g,"")) || 0;
   
@@ -228,7 +212,6 @@ export default function Home() {
   const restockCost = inventoryItems.filter(g => g.stock_status !== "IN_STOCK").reduce((sum, g) => sum + (parsePrice(g.price) * (g.quantity || 1)), 0);
 
   const navItems = [
-    { id: 'daily', icon: CheckCircle2, label: 'Daily' },
     { id: 'inventory', icon: Package, label: 'Inventory' },
     { id: 'boards', icon: LayoutGrid, label: 'Boards' },
     { id: 'dreams', icon: Sparkles, label: 'Dreams' },
@@ -239,7 +222,7 @@ export default function Home() {
     <div className="bg-black min-h-screen text-white font-sans overflow-x-hidden pb-32">
       <header className="pt-12 pb-6 px-6 sticky top-0 bg-black/80 backdrop-blur-xl z-40 flex justify-between items-end">
         <h1 className="text-3xl font-bold tracking-tight capitalize">{activeTab}</h1>
-        {activeTab !== 'daily' && activeTab !== 'vault' && (
+        {activeTab !== 'vault' && (
           <div className="text-right">
             <p className="text-[10px] text-green-400 uppercase font-bold tracking-widest">Rebuild Pool</p>
             <p className="text-xl font-bold text-white">E£{rebuildPool}</p>
@@ -249,24 +232,10 @@ export default function Home() {
 
       <main className="px-6 w-full max-w-xl mx-auto">
         
-        {/* ===================== DAILY ===================== */}
-        {activeTab === "daily" && (
-          <div className="animate-in fade-in flex flex-col gap-4">
-            <h2 className="text-[10px] font-bold text-white/50 uppercase tracking-widest mb-2">Execution Protocol</h2>
-            {routines.map(item => (
-              <button key={item.id} onClick={() => toggleRoutine(item.id)} className={`flex items-center gap-4 w-full text-left p-5 rounded-3xl border transition-all duration-300 ${item.done ? 'bg-white/5 border-white/5 opacity-50' : 'bg-white/10 border-white/10'}`}>
-                {item.done ? <CheckSquare className="text-green-400" size={24} /> : <Square className="text-white/40" size={24} />}
-                <span className={`${item.done ? 'line-through text-white/30' : 'text-white/90'} text-sm font-medium`}>{item.text}</span>
-              </button>
-            ))}
-          </div>
-        )}
-
         {/* ===================== INVENTORY ===================== */}
         {activeTab === "inventory" && (
           <div className="animate-in fade-in space-y-4">
             
-            {/* Recurring Essentials */}
             <h2 className="text-[10px] font-bold text-white/50 uppercase tracking-widest mt-2 pl-1">Restockables</h2>
             {restockCost > 0 && (
               <div className="bg-amber-500/10 border border-amber-500/30 rounded-3xl p-5 flex items-center justify-between">
@@ -302,7 +271,6 @@ export default function Home() {
             ))}
             {inventoryItems.length === 0 && <p className="text-white/40 text-sm pl-1">No restockables set.</p>}
 
-            {/* One-Off Purchases */}
             <h2 className="text-[10px] font-bold text-white/50 uppercase tracking-widest pt-4 pl-1 border-t border-white/10 mt-6">One-Off Needs</h2>
             {oneOffItems.map((goal) => (
               <div key={goal.id} className="bg-white/5 border border-white/10 rounded-3xl p-4 flex items-center gap-4 shadow-lg">
@@ -377,7 +345,6 @@ export default function Home() {
                   <ChevronLeft size={16} /> Back to Projects
                 </button>
                 
-                {/* Master Project Funding Console */}
                 {(() => {
                   const cost = activeSubGroupItems.reduce((sum, g) => sum + (parsePrice(g.price) * (g.quantity || 1)), 0);
                   const funded = projectFunds[`${activeBoard}_${selectedSubGroup}`] || 0;
@@ -405,7 +372,6 @@ export default function Home() {
                   );
                 })()}
                 
-                {/* Items strictly displayed as a checklist/list */}
                 <h2 className="text-[10px] font-bold text-white/50 uppercase tracking-widest pl-1 mt-6">Project Items</h2>
                 <div className="flex flex-col gap-3">
                   {activeSubGroupItems.map((goal) => (
@@ -465,6 +431,34 @@ export default function Home() {
         {/* ===================== VAULT (ADMIN) ===================== */}
         {activeTab === "vault" && (
           <div className="animate-in fade-in space-y-6">
+            
+            <div className="bg-green-500/10 border border-green-500/30 rounded-3xl p-6 flex justify-between items-center shadow-lg">
+              <div>
+                <h3 className="text-green-400 font-bold text-sm">Total Rebuild Pool</h3>
+                <p className="text-green-400/60 text-xs">Available to deploy</p>
+              </div>
+              <span className="text-3xl font-black text-green-400">E£{rebuildPool}</span>
+            </div>
+
+            <div className="bg-white/5 border border-white/10 rounded-3xl p-6 shadow-lg">
+              <h2 className="text-[10px] font-bold text-white/50 uppercase tracking-widest mb-4">Liability Target</h2>
+              {activeDebt ? (
+                <div>
+                  <div className="flex justify-between items-end mb-3"><span className="text-xl font-bold text-white">{activeDebt.name}</span><span className="text-red-400 font-bold tabular-nums">{activeDebt.amount_paid} / {activeDebt.target_amount}</span></div>
+                  <div className="h-2 w-full bg-black/40 rounded-full overflow-hidden border border-white/5">
+                    <div className="h-full bg-red-500" style={{ width: `${Math.min((activeDebt.amount_paid / activeDebt.target_amount) * 100, 100)}%` }}></div>
+                  </div>
+                  <button onClick={() => saveDebtToLocal(null)} className="mt-4 text-xs text-red-400 font-bold">Clear Debt Tracker</button>
+                </div>
+              ) : (
+                <form onSubmit={handleCreateDebt} className="flex flex-col gap-4 mt-2">
+                  <input type="text" value={debtNameInput} onChange={(e) => setDebtNameInput(e.target.value)} placeholder="Objective Name (e.g. Credit Card)" className="bg-black/20 border border-white/5 rounded-2xl px-4 py-3 text-white text-sm outline-none" required />
+                  <input type="number" value={debtTargetInput} onChange={(e) => setDebtTargetInput(e.target.value)} placeholder="Total Amount" className="bg-black/20 border border-white/5 rounded-2xl px-4 py-3 text-white text-sm outline-none" required />
+                  <button type="submit" className="w-full bg-red-500/20 border border-red-500/30 text-red-400 font-bold py-3.5 rounded-2xl">Set Liability</button>
+                </form>
+              )}
+            </div>
+
             <div className="bg-white/5 border border-white/10 rounded-3xl p-6 shadow-lg">
               <h2 className="text-[10px] font-bold text-white/50 uppercase tracking-widest mb-4">Monday Split Engine</h2>
               <form onSubmit={handleLogIncome} className="flex flex-col gap-4">
@@ -474,14 +468,6 @@ export default function Home() {
                 </div>
                 <button type="submit" className="w-full bg-green-500 text-black py-4 rounded-2xl font-bold text-lg">Route Funds</button>
               </form>
-            </div>
-            
-            <div className="bg-green-500/10 border border-green-500/30 rounded-3xl p-6 flex justify-between items-center">
-              <div>
-                <h3 className="text-green-400 font-bold text-sm">Total Rebuild Pool</h3>
-                <p className="text-green-400/60 text-xs">Available to deploy</p>
-              </div>
-              <span className="text-3xl font-black text-green-400">E£{rebuildPool}</span>
             </div>
 
             <div className="bg-white/5 border border-white/10 rounded-3xl p-6 shadow-lg">
@@ -588,7 +574,7 @@ export default function Home() {
       )}
 
       {/* FAB */}
-      {activeTab !== "vault" && activeTab !== "daily" && (
+      {activeTab !== "vault" && (
         <button onClick={() => { closeModal(); setShowFabModal(true); }} className="fixed bottom-28 right-6 w-14 h-14 bg-green-500 text-black rounded-full flex items-center justify-center shadow-[0_10px_30px_rgba(34,197,94,0.4)] z-40">
           <Plus size={28} strokeWidth={2.5} />
         </button>
@@ -597,7 +583,7 @@ export default function Home() {
       {/* BOTTOM NAV */}
       <div className="fixed bottom-6 left-4 right-4 z-50">
         <div className="bg-[#1c1c1e]/80 backdrop-blur-2xl border border-white/10 rounded-[2.5rem] px-4 py-2.5 flex justify-between items-center shadow-[0_20px_40px_rgba(0,0,0,0.6)]">
-          {[{ id: 'daily', icon: CheckCircle2, label: 'Daily' }, { id: 'inventory', icon: Package, label: 'Inventory' }, { id: 'boards', icon: LayoutGrid, label: 'Boards' }, { id: 'dreams', icon: Sparkles, label: 'Dreams' }, { id: 'vault', icon: Wallet, label: 'Vault' }].map((item) => (
+          {[{ id: 'inventory', icon: Package, label: 'Inventory' }, { id: 'boards', icon: LayoutGrid, label: 'Boards' }, { id: 'dreams', icon: Sparkles, label: 'Dreams' }, { id: 'vault', icon: Wallet, label: 'Vault' }].map((item) => (
             <button key={item.id} onClick={() => setActiveTab(item.id as any)} className={`flex flex-col items-center justify-center flex-1 gap-1 transition-all duration-300 ${activeTab === item.id ? 'text-white scale-105' : 'text-white/40 hover:text-white/60'}`}>
               <item.icon size={22} strokeWidth={2.5} className={activeTab === item.id ? "text-green-400" : ""} />
               <span className="text-[9px] font-bold tracking-wide mt-0.5 uppercase">{item.label}</span>
